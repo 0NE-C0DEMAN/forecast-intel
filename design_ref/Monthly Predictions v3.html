@@ -573,8 +573,8 @@ function ItemsTableTab({ data }) {
             </tbody>
           </table>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderTop: '1px solid var(--border)', background: '#FAFBFC', flexShrink: 0 }}>
-          <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '8px 14px', borderTop: '1px solid var(--border)', background: '#FAFBFC', flexShrink: 0, gap: 8 }}>
+          <div style={{ flex: 1, fontSize: 11, color: 'var(--text-3)', minWidth: 0 }}>
             Showing {sorted.length === 0 ? 0 : tablePage * PAGE_SIZE + 1}–{Math.min((tablePage + 1) * PAGE_SIZE, sorted.length)} of {sorted.length}
           </div>
           <div style={{ display: 'flex', gap: 4 }}>
@@ -583,6 +583,7 @@ function ItemsTableTab({ data }) {
               for (let i = start; i < end; i++) btns.push(<PgBtn key={i} label={i + 1} active={i === tablePage} onClick={() => setTablePage(i)} />); return btns; })()}
             <PgBtn label="→" disabled={tablePage >= totalPages - 1} onClick={() => setTablePage(p => p + 1)} />
           </div>
+          <div style={{ flex: 1 }}></div>
         </div>
       </div>
     </div>
