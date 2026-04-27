@@ -197,11 +197,11 @@ function PredictionsPage({ data, allData, stats, periodGroups, period }) {
       </div>
 
       {/* Tab content */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
-        {tab === 'overview' && <OverviewTab data={data} stats={stats} periodGroups={periodGroups} />}
-        {tab === 'movement' && <MovementTab data={data} periodGroups={periodGroups} period={period} />}
-        {tab === 'distribution' && <DistributionTab data={data} />}
-        {tab === 'insights' && <InsightsTab data={data} allData={allData} periodGroups={periodGroups} period={period} />}
+      <div style={{ flex: 1, overflow: 'hidden', padding: 16, display: 'flex', flexDirection: 'column' }}>
+        {tab === 'overview' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><OverviewTab data={data} stats={stats} periodGroups={periodGroups} /></div>}
+        {tab === 'movement' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><MovementTab data={data} periodGroups={periodGroups} period={period} /></div>}
+        {tab === 'distribution' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><DistributionTab data={data} /></div>}
+        {tab === 'insights' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><InsightsTab data={data} allData={allData} periodGroups={periodGroups} period={period} /></div>}
         {tab === 'items' && <ItemsTableTab data={data} />}
       </div>
     </div>
@@ -430,9 +430,22 @@ function ItemsTableTab({ data }) {
   const fmt = (v) => { if (v == null) return '—'; if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 1 }); return v; };
   const ac = (a) => a === 'Deliver' ? '#059669' : a === 'Return' ? '#DC2626' : '#D97706';
 
+  // Locked column widths so columns don't shift between pages.
+  const cols = [
+    { col: 'itemCode',            label: 'Code',             width: '8%',  align: 'left' },
+    { col: 'description',         label: 'Item Description', width: '32%', align: 'left' },
+    { col: 'isHV',                label: 'HV',               width: '7%',  align: 'center' },
+    { col: 'predictedAction',     label: 'Action',           width: '12%', align: 'left' },
+    { col: 'prevClosingBal',      label: 'Prev Bal',         width: '10%', align: 'right' },
+    { col: 'predictedClosingBal', label: 'Predicted',        width: '11%', align: 'right' },
+    { col: 'difference',          label: 'Diff',             width: '9%',  align: 'right' },
+    { col: 'quantity',            label: 'Quantity',         width: '11%', align: 'right' },
+  ];
+
   return (
-    <Card title={null}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+      {/* Toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 14, fontWeight: 700 }}>Predicted Line-Items</span>
           <span style={{ fontSize: 11, color: 'var(--text-3)' }}>· {filtered.length} rows</span>
@@ -447,59 +460,58 @@ function ItemsTableTab({ data }) {
           ))}
         </div>
       </div>
-      <div style={{ borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-          <thead>
-            <tr>
-              {[
-                { col: 'itemCode', label: 'Code', w: 76 },
-                { col: 'description', label: 'Item Description', minW: 160 },
-                { col: 'isHV', label: 'HV' },
-                { col: 'predictedAction', label: 'Action' },
-                { col: 'prevClosingBal', label: 'Prev Bal', align: 'right' },
-                { col: 'predictedClosingBal', label: 'Predicted', align: 'right' },
-                { col: 'difference', label: 'Diff', align: 'right' },
-                { col: 'quantity', label: 'Quantity', align: 'right' },
-              ].map(h => (
-                <th key={h.col} onClick={() => handleSort(h.col)} style={{
-                  padding: '9px 12px', textAlign: h.align || 'left', fontSize: 10, fontWeight: 600,
-                  color: sortCol === h.col ? 'var(--accent)' : 'var(--text-3)',
-                  cursor: 'pointer', userSelect: 'none', textTransform: 'uppercase', letterSpacing: '.05em',
-                  borderBottom: '2px solid var(--border)', background: '#FAFBFC', whiteSpace: 'nowrap',
-                  width: h.w, minWidth: h.minW,
-                }}>{h.label}{sortCol === h.col && <span style={{ fontSize: 10, marginLeft: 2 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {pageRows.map((row, i) => (
-              <tr key={row.itemCode + i} style={{ borderBottom: '1px solid #F3F4F6' }}
-                onMouseEnter={e => e.currentTarget.style.background = '#FAFBFC'} onMouseLeave={e => e.currentTarget.style.background = ''}>
-                <td style={{ padding: '8px 12px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-2)' }}>{row.itemCode}</td>
-                <td style={{ padding: '8px 12px', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.description}</td>
-                <td style={{ padding: '8px 12px', textAlign: 'center' }}>{row.isHV ? <span style={{ color: 'var(--accent)', fontWeight: 700, fontSize: 11 }}>Yes</span> : <span style={{ color: 'var(--text-3)', fontSize: 11 }}>No</span>}</td>
-                <td style={{ padding: '8px 12px' }}><span style={{ color: ac(row.predictedAction), fontWeight: 600, fontSize: 11 }}>{row.predictedAction}</span></td>
-                <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11 }}>{fmt(row.prevClosingBal)}</td>
-                <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600 }}>{fmt(row.predictedClosingBal)}</td>
-                <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: row.difference > 0 ? '#059669' : row.difference < 0 ? '#DC2626' : 'var(--text-3)' }}>{row.difference > 0 ? '+' : ''}{fmt(row.difference)}</td>
-                <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700 }}>{fmt(row.quantity)}</td>
+
+      {/* Card with table area + sticky pagination footer */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 12, border: '1px solid var(--border)', background: '#fff', minHeight: 0 }}>
+        <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed' }}>
+            <colgroup>
+              {cols.map(c => <col key={c.col} style={{ width: c.width }} />)}
+            </colgroup>
+            <thead>
+              <tr>
+                {cols.map(h => (
+                  <th key={h.col} onClick={() => handleSort(h.col)} style={{
+                    padding: '9px 12px', textAlign: h.align, fontSize: 10, fontWeight: 600,
+                    color: sortCol === h.col ? 'var(--accent)' : 'var(--text-3)',
+                    cursor: 'pointer', userSelect: 'none', textTransform: 'uppercase', letterSpacing: '.05em',
+                    borderBottom: '2px solid var(--border)', background: '#FAFBFC', whiteSpace: 'nowrap',
+                    position: 'sticky', top: 0, zIndex: 1,
+                  }}>{h.label}{sortCol === h.col && <span style={{ fontSize: 10, marginLeft: 2 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0 0' }}>
-        <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
-          Showing {sorted.length === 0 ? 0 : tablePage * PAGE_SIZE + 1}–{Math.min((tablePage + 1) * PAGE_SIZE, sorted.length)} of {sorted.length}
+            </thead>
+            <tbody>
+              {pageRows.map((row, i) => (
+                <tr key={row.itemCode + i} style={{ borderBottom: '1px solid #F3F4F6' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#FAFBFC'} onMouseLeave={e => e.currentTarget.style.background = ''}>
+                  <td style={{ padding: '8px 12px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.itemCode}</td>
+                  <td style={{ padding: '8px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.description}>{row.description}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'center' }}>{row.isHV ? <span style={{ color: 'var(--accent)', fontWeight: 700, fontSize: 11 }}>Yes</span> : <span style={{ color: 'var(--text-3)', fontSize: 11 }}>No</span>}</td>
+                  <td style={{ padding: '8px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><span style={{ color: ac(row.predictedAction), fontWeight: 600, fontSize: 11 }}>{row.predictedAction}</span></td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmt(row.prevClosingBal)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmt(row.predictedClosingBal)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: row.difference > 0 ? '#059669' : row.difference < 0 ? '#DC2626' : 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.difference > 0 ? '+' : ''}{fmt(row.difference)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmt(row.quantity)}</td>
+                </tr>
+              ))}
+              {pageRows.length === 0 && <tr><td colSpan={cols.length} style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>No items match the filter</td></tr>}
+            </tbody>
+          </table>
         </div>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <PgBtn label="←" disabled={tablePage === 0} onClick={() => setTablePage(p => p - 1)} />
-          {(() => { const btns = []; const start = Math.max(0, Math.min(tablePage - 2, totalPages - 5)); const end = Math.min(totalPages, start + 5);
-            for (let i = start; i < end; i++) btns.push(<PgBtn key={i} label={i + 1} active={i === tablePage} onClick={() => setTablePage(i)} />); return btns; })()}
-          <PgBtn label="→" disabled={tablePage >= totalPages - 1} onClick={() => setTablePage(p => p + 1)} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderTop: '1px solid var(--border)', background: '#FAFBFC', flexShrink: 0 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+            Showing {sorted.length === 0 ? 0 : tablePage * PAGE_SIZE + 1}–{Math.min((tablePage + 1) * PAGE_SIZE, sorted.length)} of {sorted.length}
+          </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <PgBtn label="←" disabled={tablePage === 0} onClick={() => setTablePage(p => p - 1)} />
+            {(() => { const btns = []; const start = Math.max(0, Math.min(tablePage - 2, totalPages - 5)); const end = Math.min(totalPages, start + 5);
+              for (let i = start; i < end; i++) btns.push(<PgBtn key={i} label={i + 1} active={i === tablePage} onClick={() => setTablePage(i)} />); return btns; })()}
+            <PgBtn label="→" disabled={tablePage >= totalPages - 1} onClick={() => setTablePage(p => p + 1)} />
+          </div>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }
 
