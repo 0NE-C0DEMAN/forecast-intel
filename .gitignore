@@ -1,0 +1,38 @@
+# Local IDE / agent state
+.claude/
+.vscode/
+.idea/
+
+# Original design archive (one-time import, not needed at runtime)
+Monthly Predictions.zip
+
+# Reference assets that aren't needed at runtime
+design_ref/uploads/
+design_ref/data.json
+design_ref/Monthly Predictions.html
+design_ref/Monthly Predictions v2.html
+design_ref/components/predictions.jsx
+
+# Test render artifact
+test_render.html
+
+# Streamlit / runtime artefacts
+streamlit.log
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.python-version
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log

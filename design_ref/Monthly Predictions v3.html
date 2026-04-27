@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forecast Intel — Monthly Predictions</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;450;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #FFFFFF;
+    --sidebar-bg: #FAFBFC;
+    --surface-2: #F3F4F7;
+    --border: #E5E7EB;
+    --hover: #F5F6F8;
+    --text: #111827;
+    --text-2: #4B5563;
+    --text-3: #9CA3AF;
+    --accent: #4F46E5;
+    --accent-surface: rgba(79,70,229,0.06);
+    --accent-border: rgba(79,70,229,0.2);
+    --deliver: #059669;
+    --deliver-bg: rgba(5,150,105,0.08);
+    --return: #DC2626;
+    --return-bg: rgba(220,38,38,0.07);
+    --nochange: #D97706;
+    --nochange-bg: rgba(217,119,6,0.08);
+    --font: 'Outfit', -apple-system, sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+  html, body { height: 100%; background: var(--sidebar-bg); color: var(--text); font-family: var(--font); }
+  body { display: flex; overflow: hidden; }
+  #root { display: flex; height: 100%; width: 100%; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::selection { background: var(--accent-surface); color: var(--accent); }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="components/sidebar.jsx"></script>
+<script type="text/babel" src="components/charts.jsx"></script>
+<script type="text/babel" src="components/datasource.jsx"></script>
+<script type="text/babel" src="components/explorer.jsx"></script>
+<script type="text/babel" src="components/upload.jsx"></script>
+<script type="text/babel" src="components/insights.jsx"></script>
+</head>
+<body>
+<script>
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accentColor": "#4F46E5"
+}/*EDITMODE-END*/;
+</script>
+<script>
+window.__RAW_DATA = null;
+fetch('data.json').then(r=>r.json()).then(d=>{ window.__RAW_DATA = d; window.dispatchEvent(new Event('dataready')); });
+</script>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+
+function PeriodSelector({ value, onChange, options }) {
+  const [open, setOpen] = useState(false);
+  const ref = React.useRef(null);
+  useEffect(() => {
+    const fn = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', fn); return () => document.removeEventListener('mousedown', fn);
+  }, []);
+  const fmt = p => { const [y, m] = p.split('-'); const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[parseInt(m)-1]} ${y}`; };
+  // Always dropdown — matches source design
+  const idx = options.indexOf(value);
+  return (
+    <div ref={ref} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <button onClick={() => idx > 0 && onChange(options[idx - 1])} disabled={idx <= 0} style={{ width: 28, height: 30, borderRadius: 6, border: '1px solid var(--border)', background: '#fff', cursor: idx > 0 ? 'pointer' : 'default', color: idx > 0 ? 'var(--text-2)' : 'var(--text-3)', fontSize: 13 }}>‹</button>
+      <div style={{ position: 'relative' }}>
+        <button onClick={() => setOpen(!open)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--text)', minWidth: 140, justifyContent: 'space-between', fontFamily: 'var(--font)' }}>
+          <span>{fmt(value)}</span><span style={{ fontSize: 10, color: 'var(--text-3)' }}>▼</span>
+        </button>
+        {open && <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.08)', maxHeight: 280, overflow: 'auto', zIndex: 100, minWidth: 160 }}>
+          {options.map(p => (
+            <button key={p} onClick={() => { onChange(p); setOpen(false); }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', border: 'none', background: value === p ? 'var(--accent-surface)' : 'transparent', color: value === p ? 'var(--accent)' : 'var(--text-2)', cursor: 'pointer', fontSize: 12, fontWeight: value === p ? 700 : 500, fontFamily: 'var(--font)' }}>{fmt(p)}</button>
+          ))}
+        </div>}
+      </div>
+      <button onClick={() => idx < options.length - 1 && onChange(options[idx + 1])} disabled={idx >= options.length - 1} style={{ width: 28, height: 30, borderRadius: 6, border: '1px solid var(--border)', background: '#fff', cursor: idx < options.length - 1 ? 'pointer' : 'default', color: idx < options.length - 1 ? 'var(--text-2)' : 'var(--text-3)', fontSize: 13 }}>›</button>
+    </div>
+  );
+}
+
+function App() {
+  const [data, setData] = useState(null);
+  const [page, setPage] = useState('predictions');
+  const [period, setPeriod] = useState('2026-01');
+  const [collapsed, setCollapsed] = useState(false);
+  const [dsOpen, setDsOpen] = useState(false);
+  const tweaks = useTweaks(TWEAK_DEFAULTS);
+
+  useEffect(() => {
+    if (window.__RAW_DATA) setData(window.__RAW_DATA);
+    else window.addEventListener('dataready', () => setData(window.__RAW_DATA));
+  }, []);
+
+  const allPeriods = useMemo(() => data ? [...new Set(data.map(d => d.period))].sort() : [], [data]);
+  const periodData = useMemo(() => data ? data.filter(d => d.period === period) : [], [data, period]);
+  const periodGroups = useMemo(() => allPeriods.map(p => ({ period: p, data: data ? data.filter(d => d.period === p) : [] })), [data, allPeriods]);
+
+  const stats = useMemo(() => {
+    const d = periodData;
+    const deliver = d.filter(x => x.predictedAction === 'Deliver');
+    const ret = d.filter(x => x.predictedAction === 'Return');
+    const nc = d.filter(x => x.predictedAction === 'No Change');
+    const deliverQty = deliver.reduce((s, x) => s + (x.quantity || 0), 0);
+    const returnQty = ret.reduce((s, x) => s + (x.quantity || 0), 0);
+    const prevTotal = d.reduce((s, x) => s + (x.prevClosingBal || 0), 0);
+    const predTotal = d.reduce((s, x) => s + (x.predictedClosingBal || 0), 0);
+    const hvCount = d.filter(x => x.isHV).length;
+    return { deliver: deliver.length, return: ret.length, noChange: nc.length, total: d.length, deliverQty, returnQty, prevTotal, predTotal, hvCount };
+  }, [periodData]);
+
+  if (!data) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', width: '100vw', color: 'var(--text-3)', fontSize: 14, gap: 10 }}>
+      <div style={{ width: 20, height: 20, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin .6s linear infinite' }}></div>
+      Loading…
+      <style>{'@keyframes spin{to{transform:rotate(360deg)}}'}</style>
+    </div>
+  );
+
+  const periodLabel = { '2026-01': 'January 2026', '2026-02': 'February 2026' }[period] || period;
+
+  return (
+    <>
+      <Sidebar activePage={page} onNavigate={setPage} collapsed={collapsed} onToggleCollapse={() => setCollapsed(!collapsed)} onOpenDataSource={() => setDsOpen(true)} itemCount={stats.total} />
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Top bar */}
+        <header style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: 16, borderBottom: '1px solid var(--border)', flexShrink: 0, background: '#fff' }}>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <h1 style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>
+              {page === 'predictions' ? 'Monthly Predictions' : page === 'explorer' ? 'Item Explorer' : 'Upload Data'}
+            </h1>
+            <span style={{ fontSize: 10, color: 'var(--text-3)', background: '#F3F4F6', padding: '3px 8px', borderRadius: 5, fontWeight: 500, whiteSpace: 'nowrap' }}>Future mode · no actuals</span>
+          </div>
+          {page === 'predictions' && <PeriodSelector value={period} onChange={setPeriod} options={allPeriods} />}
+        </header>
+
+        <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {page === 'predictions' && <PredictionsPage data={periodData} allData={data} stats={stats} periodGroups={periodGroups} period={period} />}
+          {page === 'explorer' && <ItemExplorerPage allData={data} period={period} />}
+          {page === 'upload' && <div style={{ padding: 24, overflow: 'auto' }}><UploadDataPage onOpenDataSource={() => setDsOpen(true)} /></div>}
+        </main>
+      </div>
+      <DataSourceModal open={dsOpen} onClose={() => setDsOpen(false)} />
+      <TweaksPanel><TweakColor label="Accent color" value={tweaks.accentColor} onChange={v => tweaks.set('accentColor', v)} /></TweaksPanel>
+    </>
+  );
+}
+
+/* ===== MONTHLY PREDICTIONS PAGE — tabbed dashboard ===== */
+function PredictionsPage({ data, allData, stats, periodGroups, period }) {
+  const [tab, setTab] = useState('overview');
+  const fmtK = v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? Math.round(v).toLocaleString() : Math.round(v).toString();
+  const pctChange = stats.prevTotal > 0 ? (((stats.predTotal - stats.prevTotal) / stats.prevTotal) * 100).toFixed(1) : '0';
+
+  const tabs = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'movement', label: 'Movement & Trends' },
+    { id: 'distribution', label: 'Distribution' },
+    { id: 'insights', label: 'Insights' },
+    { id: 'items', label: 'Line Items' },
+  ];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* Sticky KPI strip */}
+      <div style={{ padding: '14px 24px 0', flexShrink: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          <KPI color="var(--accent)" label="Items" value={stats.total} sub={`${stats.hvCount} high-value`} />
+          <KPI color="var(--accent)" label="Net Closing Bal" value={fmtK(stats.predTotal)} sub={`${pctChange >= 0 ? '+' : ''}${pctChange}% vs prev`} subColor={pctChange >= 0 ? '#059669' : '#DC2626'} />
+          <KPI color="#059669" label="Deliver Volume" value={fmtK(stats.deliverQty)} sub={`${stats.deliver} items`} subColor="#059669" />
+          <KPI color="#DC2626" label="Return Volume" value={fmtK(stats.returnQty)} sub={`${stats.return} items`} subColor="#DC2626" />
+        </div>
+      </div>
+
+      {/* Tab nav */}
+      <div style={{ padding: '14px 24px 0', flexShrink: 0, borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{
+              padding: '8px 16px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'var(--font)',
+              background: 'transparent', color: tab === t.id ? 'var(--accent)' : 'var(--text-3)',
+              borderBottom: '2px solid', borderColor: tab === t.id ? 'var(--accent)' : 'transparent',
+              marginBottom: -1, transition: 'all .15s',
+            }}>{t.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tab content */}
+      <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+        {tab === 'overview' && <OverviewTab data={data} stats={stats} periodGroups={periodGroups} />}
+        {tab === 'movement' && <MovementTab data={data} periodGroups={periodGroups} period={period} />}
+        {tab === 'distribution' && <DistributionTab data={data} />}
+        {tab === 'insights' && <InsightsTab data={data} allData={allData} periodGroups={periodGroups} period={period} />}
+        {tab === 'items' && <ItemsTableTab data={data} />}
+      </div>
+    </div>
+  );
+}
+
+function OverviewTab({ data, stats, periodGroups }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 'min-content', gap: 12 }}>
+      <Card title="Action Mix" style={{ gridColumn: 'span 2' }}><ActionDonut data={data} /></Card>
+      <Card title="HV vs Standard" style={{ gridColumn: 'span 2' }}><HVBreakdown data={data} /></Card>
+      <Card title="Closing Balance" style={{ gridColumn: 'span 2' }}><ClosingBalancePortfolio data={data} /></Card>
+      <Card title="Top 10 Deliver" style={{ gridColumn: 'span 3' }}><TopItemsBar data={data} action="Deliver" maxItems={10} color="#059669" /></Card>
+      <Card title="Top 10 Return" style={{ gridColumn: 'span 3' }}><TopItemsBar data={data} action="Return" maxItems={10} color="#DC2626" /></Card>
+    </div>
+  );
+}
+
+function MovementTab({ data, periodGroups, period }) {
+  const [pairFrom, setPairFrom] = useState(periodGroups.length >= 2 ? periodGroups[periodGroups.length - 2].period : null);
+  const [pairTo, setPairTo] = useState(periodGroups.length >= 2 ? periodGroups[periodGroups.length - 1].period : null);
+  const fromData = periodGroups.find(pg => pg.period === pairFrom)?.data || [];
+  const toData = periodGroups.find(pg => pg.period === pairTo)?.data || [];
+  const many = periodGroups.length > 4;
+  const changedCount = (() => {
+    const fm = {};
+    fromData.forEach(d => { fm[d.itemCode] = d.predictedAction; });
+    let changed = 0;
+    toData.forEach(d => { if (fm[d.itemCode] && fm[d.itemCode] !== d.predictedAction) changed++; });
+    return changed;
+  })();
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 'min-content', gap: 12 }}>
+      <Card title={`Action Counts by Period · ${periodGroups.length} period${periodGroups.length === 1 ? '' : 's'}`} style={{ gridColumn: 'span 6' }}>
+        <ActionCountBars periodGroups={periodGroups} />
+      </Card>
+
+      <Card title="Net Inventory Movement · units" style={{ gridColumn: 'span 6' }}>
+        <NetMovementBars periodGroups={periodGroups} dense={many} />
+      </Card>
+
+      <Card title="HV vs Standard Movement by Period" style={{ gridColumn: 'span 6' }}>
+        <HVMovementByPeriod periodGroups={periodGroups} />
+      </Card>
+
+      <Card title="Top High-Velocity Items · cumulative across periods" style={{ gridColumn: 'span 6' }}>
+        <HighVelocityItems periodGroups={periodGroups} />
+      </Card>
+
+      {periodGroups.length > 1 && (
+        <Card title={null} style={{ gridColumn: 'span 6' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>Action Flow Between Periods</span>
+            <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 600, marginLeft: 8 }}>Flow</span>
+            <PeriodPicker value={pairFrom} onChange={setPairFrom} options={periodGroups.map(p => p.period)} />
+            <span style={{ fontSize: 14, color: 'var(--text-3)' }}>→</span>
+            <PeriodPicker value={pairTo} onChange={setPairTo} options={periodGroups.map(p => p.period)} />
+            <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 'auto' }}>{changedCount} items changed direction</span>
+          </div>
+          <ActionFlowSankey janData={fromData} febData={toData} />
+        </Card>
+      )}
+
+      <Card title="Model Accuracy" style={{ gridColumn: 'span 6' }}>
+        <ModelAccuracyTable periodGroups={periodGroups} />
+      </Card>
+    </div>
+  );
+}
+
+function PeriodPicker({ value, onChange, options }) {
+  const fmt = p => { const [y, m] = p.split('-'); const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[parseInt(m)-1]} ${y}`; };
+  return (
+    <select value={value || ''} onChange={e => onChange(e.target.value)} style={{
+      padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: '#fff',
+      fontSize: 12, fontWeight: 600, fontFamily: 'var(--font)', color: 'var(--text)', cursor: 'pointer', outline: 'none'
+    }}>
+      {options.map(p => <option key={p} value={p}>{fmt(p)}</option>)}
+    </select>
+  );
+}
+
+function TrendLineChart({ periodGroups }) {
+  const points = periodGroups.map(pg => ({
+    period: pg.period,
+    deliver: pg.data.filter(d => d.predictedAction === 'Deliver').length,
+    return: pg.data.filter(d => d.predictedAction === 'Return').length,
+    nochange: pg.data.filter(d => d.predictedAction === 'No Change').length,
+    deliverQty: pg.data.filter(d => d.predictedAction === 'Deliver').reduce((s, d) => s + (d.quantity || 0), 0),
+    returnQty: pg.data.filter(d => d.predictedAction === 'Return').reduce((s, d) => s + (d.quantity || 0), 0),
+  }));
+  const max = Math.max(...points.flatMap(p => [p.deliver, p.return, p.nochange]), 1);
+  const w = 880, h = 220, padL = 44, padR = 16, padT = 16, padB = 40;
+  const cW = w - padL - padR, cH = h - padT - padB;
+  const x = (i) => padL + (points.length === 1 ? cW / 2 : (i / (points.length - 1)) * cW);
+  const y = (v) => padT + cH - (v / max) * cH;
+  const line = (key) => points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i)} ${y(p[key])}`).join(' ');
+  const colors = { deliver: '#059669', return: '#DC2626', nochange: '#D97706' };
+  const [hi, setHi] = React.useState(null);
+  const fmt = p => { const m = p.split('-')[1]; const names = ['','J','F','M','A','M','J','J','A','S','O','N','D']; return names[parseInt(m)]; };
+  const fullFmt = p => { const [y, m] = p.split('-'); const names = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[parseInt(m)]} ${y}`; };
+  const labelEvery = points.length > 24 ? 3 : points.length > 12 ? 2 : 1;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 14, marginBottom: 6, fontSize: 11, color: 'var(--text-2)' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 12, height: 2, background: colors.deliver }}></span>Deliver</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 12, height: 2, background: colors.return }}></span>Return</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 12, height: 2, background: colors.nochange }}></span>No Change</span>
+      </div>
+      <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ overflow: 'visible' }} onMouseLeave={() => setHi(null)}>
+        {[0,.25,.5,.75,1].map((p,i) => { const yy = padT + cH - cH * p; return <g key={i}><line x1={padL} y1={yy} x2={w-padR} y2={yy} stroke="#F3F4F6" /><text x={padL-6} y={yy+3.5} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(max*p)}</text></g>; })}
+        {/* Hover regions */}
+        {points.map((p, i) => (<rect key={i} x={x(i) - cW/(points.length*2)} y={padT} width={cW/Math.max(points.length-1,1)} height={cH} fill="transparent" onMouseEnter={() => setHi(i)} />))}
+        {hi != null && <line x1={x(hi)} y1={padT} x2={x(hi)} y2={padT+cH} stroke="var(--text-3)" strokeDasharray="3,3" strokeWidth={1} />}
+        {/* Lines */}
+        {['deliver','return','nochange'].map(key => <path key={key} d={line(key)} fill="none" stroke={colors[key]} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />)}
+        {/* Dots */}
+        {points.map((p, i) => ['deliver','return','nochange'].map(key => <circle key={key+i} cx={x(i)} cy={y(p[key])} r={hi === i ? 4 : 2.5} fill={colors[key]} />))}
+        {/* X axis labels */}
+        {points.map((p, i) => i % labelEvery === 0 && <text key={i} x={x(i)} y={padT+cH+14} textAnchor="middle" fontSize="9" fill="var(--text-3)" fontFamily="var(--mono)">{fmt(p.period)}</text>)}
+        {/* Year labels at boundaries */}
+        {(() => { const yrs = {}; points.forEach((p, i) => { const y = p.period.split('-')[0]; if (!yrs[y]) yrs[y] = []; yrs[y].push(i); }); return Object.entries(yrs).map(([yr, idxs]) => { const xPos = (x(idxs[0]) + x(idxs[idxs.length - 1])) / 2; return <text key={yr} x={xPos} y={padT+cH+30} textAnchor="middle" fontSize="11" fill="var(--text-2)" fontWeight="700" fontFamily="var(--mono)">{yr}</text>; }); })()}
+        {/* Tooltip */}
+        {hi != null && (() => { const p = points[hi]; const ttX = Math.min(Math.max(x(hi), padL + 80), w - padR - 80); return <g><rect x={ttX-72} y={padT+4} width={144} height={66} rx={6} fill="#fff" stroke="var(--border)" /><text x={ttX} y={padT+18} textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--text)">{fullFmt(p.period)}</text><text x={ttX-62} y={padT+34} fontSize="10" fill={colors.deliver} fontWeight="600">Deliver: {p.deliver}</text><text x={ttX-62} y={padT+48} fontSize="10" fill={colors.return} fontWeight="600">Return: {p.return}</text><text x={ttX-62} y={padT+62} fontSize="10" fill={colors.nochange} fontWeight="600">No Change: {p.nochange}</text></g>; })()}
+      </svg>
+    </div>
+  );
+}
+
+function NetMovementBars({ periodGroups, dense }) {
+  const bars = periodGroups.map(pg => {
+    const del = pg.data.filter(d => d.predictedAction === 'Deliver').reduce((s, d) => s + (d.quantity || 0), 0);
+    const ret = pg.data.filter(d => d.predictedAction === 'Return').reduce((s, d) => s + (d.quantity || 0), 0);
+    return { period: pg.period, deliver: del, return: ret, net: del - ret };
+  });
+  const maxAbs = Math.max(...bars.flatMap(b => [b.deliver, b.return, Math.abs(b.net)]), 1);
+  const fmtK = v => v >= 1e3 ? (v / 1e3).toFixed(1) + 'K' : Math.round(v);
+  const w = 880, h = 200, padL = 50, padR = 12, padT = 14, padB = 38;
+  const cW = w - padL - padR, cH = h - padT - padB;
+  const groupW = cW / bars.length;
+  const barW = Math.min(dense ? 4 : 18, groupW * 0.28);
+  const labelEvery = bars.length > 24 ? 3 : bars.length > 12 ? 2 : 1;
+  const fmt = p => { const m = p.split('-')[1]; const names = ['','J','F','M','A','M','J','J','A','S','O','N','D']; return names[parseInt(m)]; };
+  const [hi, setHi] = React.useState(null);
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4 }}>Deliveries (green) vs returns (red) and net change (blue) per period.</div>
+      <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ overflow: 'visible' }}>
+        {[0,.5,1].map((p,i) => { const yy = padT + cH - cH * p; return <g key={i}><line x1={padL} y1={yy} x2={w-padR} y2={yy} stroke="#F3F4F6" /><text x={padL-6} y={yy+3.5} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{fmtK(maxAbs*p)}</text></g>; })}
+        {bars.map((b, i) => {
+          const cx = padL + groupW * (i + 0.5);
+          const dh = (b.deliver / maxAbs) * cH;
+          const rh = (b.return / maxAbs) * cH;
+          const nh = (Math.abs(b.net) / maxAbs) * cH;
+          return (
+            <g key={b.period} style={{ cursor: 'pointer' }} onMouseEnter={() => setHi(i)} onMouseLeave={() => setHi(null)} opacity={hi != null && hi !== i ? 0.65 : 1}>
+              <rect x={cx - barW * 1.6} y={padT + cH - dh} width={barW} height={dh} rx={Math.min(2, barW/3)} fill="#059669" opacity={.8} />
+              <rect x={cx - barW * 0.5} y={padT + cH - rh} width={barW} height={rh} rx={Math.min(2, barW/3)} fill="#DC2626" opacity={.8} />
+              <rect x={cx + barW * 0.6} y={padT + cH - nh} width={barW} height={nh} rx={Math.min(2, barW/3)} fill={b.net >= 0 ? 'var(--accent)' : '#7C3AED'} opacity={.8} />
+            </g>
+          );
+        })}
+        {bars.map((b, i) => i % labelEvery === 0 && <text key={i} x={padL + groupW * (i + 0.5)} y={padT+cH+14} textAnchor="middle" fontSize="9" fill="var(--text-3)" fontFamily="var(--mono)">{fmt(b.period)}</text>)}
+        {(() => { const yrs = {}; bars.forEach((b, i) => { const y = b.period.split('-')[0]; if (!yrs[y]) yrs[y] = []; yrs[y].push(i); }); return Object.entries(yrs).map(([yr, idxs]) => { const xPos = padL + groupW * ((idxs[0] + idxs[idxs.length - 1]) / 2 + 0.5); return <text key={yr} x={xPos} y={padT+cH+30} textAnchor="middle" fontSize="11" fill="var(--text-2)" fontWeight="700" fontFamily="var(--mono)">{yr}</text>; }); })()}
+        {hi != null && (() => { const b = bars[hi]; const cx = padL + groupW * (hi + 0.5); const ttX = Math.min(Math.max(cx, padL + 70), w - padR - 70); return <g><rect x={ttX-66} y={padT-2} width={132} height={64} rx={6} fill="#fff" stroke="var(--border)" /><text x={ttX} y={padT+12} textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--text)" fontFamily="var(--mono)">{b.period}</text><text x={ttX-58} y={padT+28} fontSize="10" fill="#059669" fontWeight="600">↑ {fmtK(b.deliver)}</text><text x={ttX-58} y={padT+42} fontSize="10" fill="#DC2626" fontWeight="600">↓ {fmtK(b.return)}</text><text x={ttX-58} y={padT+56} fontSize="10" fill={b.net>=0?'var(--accent)':'#7C3AED'} fontWeight="700">net {b.net>=0?'+':''}{fmtK(b.net)}</text></g>; })()}
+      </svg>
+    </div>
+  );
+}
+
+function InsightsTab({ data, allData, periodGroups, period }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gridAutoRows: 'min-content', gap: 12 }}>
+      <Card title="Auto-Insights · this period"><AutoInsights allData={allData} currentPeriod={period} /></Card>
+      <Card title="Stock-out & Excess Risk Watch"><RiskWatchlist data={data} allData={allData} currentPeriod={period} /></Card>
+      <Card title="ABC Pareto · 80/20 concentration"><ABCPareto data={data} /></Card>
+      {periodGroups.length > 1 && <Card title="Action Calendar Heatmap · top items × all periods"><ActionCalendarHeatmap data={allData} /></Card>}
+      {periodGroups.length > 1 && <Card title="Year-over-Year Comparison"><YearOverYearComparison allData={allData} /></Card>}
+    </div>
+  );
+}
+
+function DistributionTab({ data }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 'min-content', gap: 12 }}>
+      <Card title="Quantity Distribution" style={{ gridColumn: 'span 6' }}><QuantityHistogram data={data} /></Card>
+      <Card title="Action × Magnitude Heatmap" style={{ gridColumn: 'span 6' }}><ActionMagnitudeHeatmap data={data} /></Card>
+      <Card title="Balance Scatter · previous → predicted" style={{ gridColumn: 'span 6' }}><BalanceScatter data={data} /></Card>
+    </div>
+  );
+}
+
+function ItemsTableTab({ data }) {
+  const [tablePage, setTablePage] = useState(0);
+  const [sortCol, setSortCol] = useState('quantity');
+  const [sortDir, setSortDir] = useState('desc');
+  const [actionFilter, setActionFilter] = useState('All');
+  const PAGE_SIZE = 20;
+
+  const filtered = useMemo(() => actionFilter === 'All' ? data : data.filter(d => d.predictedAction === actionFilter), [data, actionFilter]);
+
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      let va = a[sortCol], vb = b[sortCol];
+      if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb||'').toLowerCase(); }
+      if (va == null) va = -Infinity; if (vb == null) vb = -Infinity;
+      return sortDir === 'asc' ? (va < vb ? -1 : va > vb ? 1 : 0) : (va > vb ? -1 : va < vb ? 1 : 0);
+    });
+    return arr;
+  }, [filtered, sortCol, sortDir]);
+
+  const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
+  const pageRows = sorted.slice(tablePage * PAGE_SIZE, (tablePage + 1) * PAGE_SIZE);
+
+  const handleSort = (col) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('desc'); }
+    setTablePage(0);
+  };
+  React.useEffect(() => { setTablePage(0); }, [actionFilter]);
+
+  const fmt = (v) => { if (v == null) return '—'; if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 1 }); return v; };
+  const ac = (a) => a === 'Deliver' ? '#059669' : a === 'Return' ? '#DC2626' : '#D97706';
+
+  return (
+    <Card title={null}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 14, fontWeight: 700 }}>Predicted Line-Items</span>
+          <span style={{ fontSize: 11, color: 'var(--text-3)' }}>· {filtered.length} rows</span>
+        </div>
+        <div style={{ display: 'flex', background: 'var(--surface-2)', borderRadius: 8, padding: 2, gap: 2 }}>
+          {['All', 'Deliver', 'Return', 'No Change'].map(a => (
+            <button key={a} onClick={() => setActionFilter(a)} style={{
+              padding: '4px 12px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)',
+              background: actionFilter === a ? '#fff' : 'transparent', color: actionFilter === a ? (a === 'All' ? 'var(--text)' : ac(a)) : 'var(--text-3)',
+              boxShadow: actionFilter === a ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
+            }}>{a}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{ borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr>
+              {[
+                { col: 'itemCode', label: 'Code', w: 76 },
+                { col: 'description', label: 'Item Description', minW: 160 },
+                { col: 'isHV', label: 'HV' },
+                { col: 'predictedAction', label: 'Action' },
+                { col: 'prevClosingBal', label: 'Prev Bal', align: 'right' },
+                { col: 'predictedClosingBal', label: 'Predicted', align: 'right' },
+                { col: 'difference', label: 'Diff', align: 'right' },
+                { col: 'quantity', label: 'Quantity', align: 'right' },
+              ].map(h => (
+                <th key={h.col} onClick={() => handleSort(h.col)} style={{
+                  padding: '9px 12px', textAlign: h.align || 'left', fontSize: 10, fontWeight: 600,
+                  color: sortCol === h.col ? 'var(--accent)' : 'var(--text-3)',
+                  cursor: 'pointer', userSelect: 'none', textTransform: 'uppercase', letterSpacing: '.05em',
+                  borderBottom: '2px solid var(--border)', background: '#FAFBFC', whiteSpace: 'nowrap',
+                  width: h.w, minWidth: h.minW,
+                }}>{h.label}{sortCol === h.col && <span style={{ fontSize: 10, marginLeft: 2 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {pageRows.map((row, i) => (
+              <tr key={row.itemCode + i} style={{ borderBottom: '1px solid #F3F4F6' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#FAFBFC'} onMouseLeave={e => e.currentTarget.style.background = ''}>
+                <td style={{ padding: '8px 12px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-2)' }}>{row.itemCode}</td>
+                <td style={{ padding: '8px 12px', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.description}</td>
+                <td style={{ padding: '8px 12px', textAlign: 'center' }}>{row.isHV ? <span style={{ color: 'var(--accent)', fontWeight: 700, fontSize: 11 }}>Yes</span> : <span style={{ color: 'var(--text-3)', fontSize: 11 }}>No</span>}</td>
+                <td style={{ padding: '8px 12px' }}><span style={{ color: ac(row.predictedAction), fontWeight: 600, fontSize: 11 }}>{row.predictedAction}</span></td>
+                <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11 }}>{fmt(row.prevClosingBal)}</td>
+                <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600 }}>{fmt(row.predictedClosingBal)}</td>
+                <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: row.difference > 0 ? '#059669' : row.difference < 0 ? '#DC2626' : 'var(--text-3)' }}>{row.difference > 0 ? '+' : ''}{fmt(row.difference)}</td>
+                <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700 }}>{fmt(row.quantity)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0 0' }}>
+        <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+          Showing {sorted.length === 0 ? 0 : tablePage * PAGE_SIZE + 1}–{Math.min((tablePage + 1) * PAGE_SIZE, sorted.length)} of {sorted.length}
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <PgBtn label="←" disabled={tablePage === 0} onClick={() => setTablePage(p => p - 1)} />
+          {(() => { const btns = []; const start = Math.max(0, Math.min(tablePage - 2, totalPages - 5)); const end = Math.min(totalPages, start + 5);
+            for (let i = start; i < end; i++) btns.push(<PgBtn key={i} label={i + 1} active={i === tablePage} onClick={() => setTablePage(i)} />); return btns; })()}
+          <PgBtn label="→" disabled={tablePage >= totalPages - 1} onClick={() => setTablePage(p => p + 1)} />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function KPI({ label, value, sub, subColor, color }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 16px' }}>
+      <div style={{ width: 22, height: 3, borderRadius: 2, background: color, marginBottom: 8 }}></div>
+      <div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', fontFamily: 'var(--mono)', lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 10, color: subColor || 'var(--text-3)', marginTop: 4, fontWeight: 500 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function ExpandBtn({ onClick, absolute }) {
+  const base = {
+    background: 'none', border: '1px solid var(--border)', borderRadius: 6,
+    padding: '3px 5px', cursor: 'pointer', color: 'var(--text-3)',
+    display: 'flex', alignItems: 'center', transition: 'color .12s, border-color .12s',
+  };
+  const pos = absolute ? { position: 'absolute', top: 12, right: 14, zIndex: 2, background: '#fff' } : {};
+  return (
+    <button onClick={onClick} title="Expand" aria-label="Expand"
+      style={{ ...base, ...pos }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)'; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-3)'; }}>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="15 3 21 3 21 9" />
+        <polyline points="9 21 3 21 3 15" />
+        <line x1="21" y1="3" x2="14" y2="10" />
+        <line x1="3" y1="21" x2="10" y2="14" />
+      </svg>
+    </button>
+  );
+}
+
+function Card({ title, children, style }) {
+  const [maxed, setMaxed] = React.useState(false);
+  const close = () => setMaxed(false);
+  React.useEffect(() => {
+    if (!maxed) return;
+    const onKey = e => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [maxed]);
+
+  return (
+    <>
+      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', position: 'relative', ...style }}>
+        {title ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.01em', flex: 1 }}>{title}</div>
+            <ExpandBtn onClick={() => setMaxed(true)} />
+          </div>
+        ) : (
+          <ExpandBtn onClick={() => setMaxed(true)} absolute />
+        )}
+        {children}
+      </div>
+      {maxed && (
+        <div onClick={close} role="dialog" aria-modal="true"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.40)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, width: 'min(1200px, calc(100vw - 48px))', maxHeight: 'calc(100vh - 48px)', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.04)' }}>
+            <div style={{ padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em' }}>{title || 'Detail view'}</div>
+              <button onClick={close} title="Close (Esc)" aria-label="Close"
+                style={{ background: 'var(--surface-2)', border: 'none', color: 'var(--text-2)', cursor: 'pointer', width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ padding: '20px 24px', overflow: 'auto', flex: 1 }}>{children}</div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function PgBtn({ label, active, disabled, onClick }) {
+  return (
+    <button onClick={disabled ? undefined : onClick} style={{
+      width: typeof label === 'number' ? 30 : 28, height: 30, borderRadius: 7, border: '1px solid',
+      borderColor: active ? 'var(--accent)' : 'var(--border)',
+      background: active ? 'var(--accent)' : '#fff',
+      color: active ? '#fff' : disabled ? 'var(--text-3)' : 'var(--text-2)',
+      fontSize: 12, fontWeight: 600, cursor: disabled ? 'default' : 'pointer',
+      fontFamily: 'var(--font)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      opacity: disabled ? .4 : 1, transition: 'all .12s',
+    }}>{label}</button>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
