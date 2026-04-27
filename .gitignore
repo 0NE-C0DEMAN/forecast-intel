@@ -16,6 +16,9 @@ design_ref/components/predictions.jsx
 # Test render artifact
 test_render.html
 
+# Local scratch
+sonu_message.txt
+
 # Streamlit / runtime artefacts
 streamlit.log
 .streamlit/secrets.toml
