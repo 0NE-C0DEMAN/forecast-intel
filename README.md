@@ -1,5 +1,7 @@
 # Forecast Intel — Monthly Inventory Predictions
 
+**Live demo:** <https://forecast-intel.streamlit.app/>
+
 A Streamlit web app that wraps an existing inventory re-forecasting ML model with an interactive dashboard. Built for operations / supply-chain planners reviewing monthly closing-balance predictions and per-item Deliver / Return / No-Change recommendations across construction-equipment SKUs.
 
 ## What it does
