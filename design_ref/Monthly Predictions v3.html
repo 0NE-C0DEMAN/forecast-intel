@@ -35,6 +35,68 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   ::selection { background: var(--accent-surface); color: var(--accent); }
+
+  /* === Mobile-only overrides — desktop layout untouched above 900px === */
+  @media (max-width: 900px) {
+    /* KPI strip: 2 columns on tablets/phones */
+    [style*="grid-template-columns: repeat(4, 1fr)"] {
+      grid-template-columns: repeat(2, 1fr) !important;
+      gap: 8px !important;
+    }
+    /* Main 6-col card grid: single column */
+    [style*="grid-template-columns: repeat(6, 1fr)"] {
+      grid-template-columns: 1fr !important;
+    }
+    /* Card spans collapse to full width */
+    [style*="grid-column: span 2"],
+    [style*="grid-column: span 3"],
+    [style*="grid-column: span 6"] {
+      grid-column: 1 / -1 !important;
+    }
+    /* Internal 2-col chart grids (Period-Pair Comparison etc.) stack */
+    [style*="grid-template-columns: 1fr 1fr"]:not([style*="repeat"]) {
+      grid-template-columns: 1fr !important;
+    }
+    /* Header row: allow wrap so title + period selector + badge can stack */
+    header[style*="display: flex"] { flex-wrap: wrap; row-gap: 8px; }
+    /* Tab strip horizontal scroll */
+    [style*="border-bottom: 1px solid var(--border)"] > div[style*="display: flex"][style*="gap: 4"] {
+      overflow-x: auto;
+      flex-wrap: nowrap;
+      -webkit-overflow-scrolling: touch;
+    }
+    /* Page title + period selector area: tighter padding */
+    main [style*="padding: 14px 24px 0"], main [style*="padding: 14px 24px"] {
+      padding: 10px 14px 0 !important;
+    }
+    /* Tab content padding */
+    main > div > div[style*="padding: 16"] { padding: 12px !important; }
+    /* Item Explorer side panel stacks below table on mobile */
+    [style*="width: 380px"][style*="flex-shrink: 0"] {
+      width: 100% !important;
+      max-height: 60vh;
+    }
+    [style*="display: flex"][style*="gap: 12px"][style*="overflow: hidden"]:has(> [style*="width: 380px"]) {
+      flex-direction: column !important;
+    }
+    /* Maximize-card modal fills more of the screen */
+    [role="dialog"] > div { width: calc(100vw - 16px) !important; max-height: calc(100vh - 16px) !important; }
+    /* Tables: allow horizontal scroll if columns get too narrow */
+    table { min-width: 640px; }
+  }
+
+  @media (max-width: 540px) {
+    /* Phone: KPI strip stacks fully */
+    [style*="grid-template-columns: repeat(4, 1fr)"] {
+      grid-template-columns: 1fr !important;
+    }
+    /* DataSource modal becomes full-screen */
+    [role="dialog"] > div, [style*="width: 520px"][style*="maxHeight: 80vh"] {
+      width: 100vw !important; max-width: 100vw !important;
+      max-height: 100vh !important; border-radius: 0 !important;
+    }
+    /* Hide the Predictions text in sidebar header on tiny screens (icon stays) */
+  }
 </style>
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
@@ -93,9 +155,21 @@ function App() {
   const [data, setData] = useState(null);
   const [page, setPage] = useState('predictions');
   const [period, setPeriod] = useState('2026-01');
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 900);
   const [dsOpen, setDsOpen] = useState(false);
   const tweaks = useTweaks(TWEAK_DEFAULTS);
+
+  // Auto-collapse sidebar when crossing the mobile breakpoint
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let prev = window.innerWidth >= 900;
+    const onResize = () => {
+      const isDesktopNow = window.innerWidth >= 900;
+      if (isDesktopNow !== prev) { setCollapsed(!isDesktopNow); prev = isDesktopNow; }
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   useEffect(() => {
     if (window.__RAW_DATA) setData(window.__RAW_DATA);
