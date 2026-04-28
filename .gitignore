@@ -18,6 +18,8 @@ test_render.html
 
 # Local scratch
 sonu_message.txt
+Forecast_Intel_Walkthrough.docx
+_doc_build/
 
 # Streamlit / runtime artefacts
 streamlit.log
