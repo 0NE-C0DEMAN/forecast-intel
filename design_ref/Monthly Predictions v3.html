@@ -368,49 +368,53 @@ function OverviewTab({ data, stats, periodGroups, period }) {
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(${monthlyData.length}, 1fr)`, gap: 10 }}>
               {monthlyData.map((r, i) => {
                 const tm = tierMeta(r.tier);
+                const accColor = (v) => v == null ? 'var(--text-3)' : v >= 80 ? '#059669' : v >= 60 ? '#D97706' : '#DC2626';
                 return (
-                  <div key={i} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' }}>
-                    {/* Header */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                      <div>
-                        <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', lineHeight: 1 }}>{fmtPeriodLabel(r.period)}</div>
-                        <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 3 }}>{r.itemsPredicted ? r.itemsPredicted + ' items forecast' : 'Monthly forecast'}</div>
-                      </div>
-                      {r.tier && (
-                        <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 20, background: tm.bg, color: tm.color, whiteSpace: 'nowrap' }}>
-                          {tm.icon} {tm.label}
-                        </span>
-                      )}
+                  <div key={i} style={{
+                    background: '#fff', border: '1px solid var(--border)', borderRadius: 12,
+                    padding: '12px 18px',
+                    display: 'flex', alignItems: 'center', gap: 22, flexWrap: 'wrap',
+                  }}>
+                    {/* Period block */}
+                    <div style={{ flexShrink: 0, minWidth: 120 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', lineHeight: 1.1 }}>{fmtPeriodLabel(r.period)}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 3 }}>{r.itemsPredicted ? r.itemsPredicted + ' items forecast' : 'Monthly forecast'}</div>
                     </div>
-                    {/* Primary: Direction accuracy */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1px 1fr', gap: 14, alignItems: 'start', marginBottom: 14 }}>
-                      <div>
-                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.04em' }}>Direction Accuracy</div>
-                        <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'var(--mono)', lineHeight: 1, color: dirAcc != null ? (dirAcc >= 80 ? '#059669' : dirAcc >= 60 ? '#D97706' : '#DC2626') : 'var(--text-3)' }}>
-                          {dirAcc != null ? dirAcc + '%' : '—'}
-                        </div>
-                        <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 3 }}>actions correctly predicted</div>
-                      </div>
-                      <div style={{ background: '#F3F4F6', height: '100%', minHeight: 36, width: 1 }} />
-                      <div>
-                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.04em' }}>HV Accuracy</div>
-                        <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'var(--mono)', lineHeight: 1, color: hvDirAcc != null ? (hvDirAcc >= 80 ? '#059669' : hvDirAcc >= 60 ? '#D97706' : '#DC2626') : 'var(--text-3)' }}>
-                          {hvDirAcc != null ? hvDirAcc + '%' : '—'}
-                        </div>
-                        <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 3 }}>high-value items only</div>
+
+                    {/* Direction accuracy */}
+                    <div style={{ flexShrink: 0, paddingLeft: 18, borderLeft: '1px solid #F3F4F6' }}>
+                      <div style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Direction</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--mono)', lineHeight: 1.15, color: accColor(dirAcc) }}>
+                        {dirAcc != null ? dirAcc + '%' : '—'}
                       </div>
                     </div>
-                    {/* Secondary: MAPE error bars (visual only, no raw %) */}
-                    <div style={{ borderTop: '1px solid #F3F4F6', paddingTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+
+                    {/* HV accuracy */}
+                    <div style={{ flexShrink: 0, paddingLeft: 18, borderLeft: '1px solid #F3F4F6' }}>
+                      <div style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>HV Direction</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--mono)', lineHeight: 1.15, color: accColor(hvDirAcc) }}>
+                        {hvDirAcc != null ? hvDirAcc + '%' : '—'}
+                      </div>
+                    </div>
+
+                    {/* MAPE bars — inline, takes remaining space */}
+                    <div style={{ flex: 1, minWidth: 240, paddingLeft: 18, borderLeft: '1px solid #F3F4F6', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                       <div>
-                        <div style={{ fontSize: 9, color: 'var(--text-3)', marginBottom: 3 }}>Forecast error · All</div>
+                        <div style={{ fontSize: 9, color: 'var(--text-3)', marginBottom: 4, fontWeight: 500 }}>Forecast error · All</div>
                         <ErrBar v={r.mapeAll} />
                       </div>
                       <div>
-                        <div style={{ fontSize: 9, color: 'var(--text-3)', marginBottom: 3 }}>Forecast error · HV</div>
+                        <div style={{ fontSize: 9, color: 'var(--text-3)', marginBottom: 4, fontWeight: 500 }}>Forecast error · HV</div>
                         <ErrBar v={r.mapeHV} />
                       </div>
                     </div>
+
+                    {/* Tier badge */}
+                    {r.tier && (
+                      <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '5px 10px', borderRadius: 20, background: tm.bg, color: tm.color, whiteSpace: 'nowrap' }}>
+                        {tm.icon} {tm.label}
+                      </span>
+                    )}
                   </div>
                 );
               })}

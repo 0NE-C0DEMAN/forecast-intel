@@ -74,9 +74,36 @@ function HVBreakdown({ data }) {
           const counts = actions.map(a => g.items.filter(d => d.predictedAction === a).length);
           let y = padT + chartH;
           const x = padL + 10 + gi * (barW + 50);
+          // Decide which side the small-count callout lives on (outside the chart)
+          const calloutSide = gi === 0 ? 'left' : 'right';
           return (
             <g key={gi}>
-              {counts.map((c, ci) => { const h = (c / maxStack) * chartH; y -= h; return <g key={ci}><rect x={x} y={y} width={barW} height={Math.max(h, 0)} rx={ci === 2 ? 5 : 0} fill={colors[actions[ci]]} opacity={.8} />{h > 14 && <text x={x + barW / 2} y={y + h / 2 + 4} textAnchor="middle" fontSize="11" fontWeight="700" fill="#fff" fontFamily="var(--mono)">{c}</text>}</g>; })}
+              {counts.map((c, ci) => {
+                if (c === 0) return null;
+                const trueH = (c / maxStack) * chartH;
+                // Force a minimum visible height so tiny slivers (e.g. 9 of 460) are still discernible
+                const h = Math.max(trueH, 4);
+                y -= h;
+                const yMid = y + h / 2;
+                const showInside = h > 16;
+                const calloutX = calloutSide === 'right' ? x + barW + 6 : x - 6;
+                const calloutAnchor = calloutSide === 'right' ? 'start' : 'end';
+                const lineX1 = calloutSide === 'right' ? x + barW : x - 5;
+                const lineX2 = calloutSide === 'right' ? x + barW + 4 : x;
+                return (
+                  <g key={ci}>
+                    <rect x={x} y={y} width={barW} height={h} rx={ci === 2 ? 5 : 0} fill={colors[actions[ci]]} opacity={.85} />
+                    {showInside ? (
+                      <text x={x + barW / 2} y={yMid + 4} textAnchor="middle" fontSize="11" fontWeight="700" fill="#fff" fontFamily="var(--mono)">{c}</text>
+                    ) : (
+                      <g>
+                        <line x1={lineX1} y1={yMid} x2={lineX2} y2={yMid} stroke={colors[actions[ci]]} strokeWidth={1} />
+                        <text x={calloutX} y={yMid + 3.5} textAnchor={calloutAnchor} fontSize="10" fontWeight="700" fill={colors[actions[ci]]} fontFamily="var(--mono)">{c}</text>
+                      </g>
+                    )}
+                  </g>
+                );
+              })}
               <text x={x + barW / 2} y={padT + chartH + 16} textAnchor="middle" fontSize="11" fill="var(--text-2)" fontWeight="500">{g.label}</text>
             </g>
           );
