@@ -6,27 +6,34 @@ A Streamlit web app that wraps an existing inventory re-forecasting ML model wit
 
 ## What it does
 
-- Reads a Monthly_Predictions sheet from an Excel workbook (or a CSV).
-- Renders a five-tab analytics dashboard inside a Streamlit page:
+- Reads a `Monthly_Predictions` sheet plus a `MAPE_Summary` sheet from an Excel workbook (or a CSV with the monthly columns).
+- Renders a four-page navigation with deep analytics across each:
+
+### Pages
+
+- **Monthly Predictions** — six tabs:
   - **Overview** — KPI strip + action mix donut + HV vs Standard split + closing-balance summary + Top 10 deliver / return movers.
-  - **Movement & Trends** — action counts per period, net inventory volumes, HV vs Standard split per period, top high-velocity items, action flow Sankey, model accuracy table.
-  - **Distribution** — quantity distribution histogram, action × magnitude heatmap, balance scatter (previous → predicted).
-  - **Insights** — auto-generated narrative cards, stock-out / excess risk watch, ABC Pareto, action calendar heatmap, year-over-year comparison.
+  - **Movement & Trends** — action counts per period, HV vs Standard counts per action, net inventory volumes per period, top items by cumulative movement, period-to-period shifts, Action Flow Sankey.
+  - **Distribution** — ABC tier × action heatmap, balance-bracket action density, action × quantity-magnitude grid, previous → predicted balance scatter.
+  - **Insights** — auto-generated narrative cards plus stock-out / excess / persistent-pattern watchlist split by criticality.
+  - **Model Accuracy** — Portfolio Predicted vs Actual closing-balance series, Direction Accuracy ring, per-item MAPE distribution histogram, and the workbook's MAPE Summary table.
   - **Line Items** — sortable, paginated, action-filterable table of every line.
-- **Item Explorer** — search any SKU, drill into its detail panel with cohort tagging.
-- **Upload Data** — drop a new Excel/CSV; the dashboard re-renders against the new dataset; only the Monthly sheet is read.
-- Every chart card has a maximize button that pops the chart into a larger modal.
+- **Item Forecasts** — a card grid (one card per SKU) showing the multi-period forecast trajectory and recent actuals for each item.
+- **Item Explorer** — search any SKU, drill into its detail panel with cohort tagging (always-deliver / always-return / volatile / dormant / at-risk / stable).
+- **Upload Data** — drop a new Excel/CSV; the dashboard re-renders against it. Only the Monthly sheet is read; if the file also has a `MAPE_Summary` sheet, the monthly rows from it are picked up too.
+
+Every chart card has a maximize button that pops it into a larger modal.
 
 ## Project structure
 
 ```
 .
-├── app.py                                 # Streamlit entry point
+├── app.py                                              # Streamlit entry point
 ├── requirements.txt
 ├── .streamlit/
 │   └── config.toml
 ├── design_ref/
-│   ├── Monthly Predictions v3.html        # Main React UI shell (loaded into the iframe)
+│   ├── Monthly Predictions v3.html                     # React UI shell loaded into the iframe
 │   ├── tweaks-panel.jsx
 │   └── components/
 │       ├── sidebar.jsx
@@ -35,21 +42,23 @@ A Streamlit web app that wraps an existing inventory re-forecasting ML model wit
 │       ├── insights.jsx
 │       ├── upload.jsx
 │       └── datasource.jsx
-└── Re_Forecast_2026_JanFeb_train24_25.xlsx   # Bundled forecast data (default source)
+└── Forecast_26_Jan_Feb_Results_train24_25_fixed.xlsx   # Bundled forecast data (default source)
 ```
 
 ## How the architecture works
 
 - **Python side** (`app.py`)
-  - Reads the bundled Excel on startup, parses `Monthly_Predictions` into JSON records that match the field names the React UI expects (`itemCode`, `predictedAction`, `prevClosingBal`, etc.).
-  - Inlines the JSX/HTML files into a single self-contained HTML document and serves it via `st.components.v1.html` as a full-viewport iframe.
-  - A hidden `st.file_uploader` lives off-screen and acts as a one-way bridge: React drop zones inject files into it via `DataTransfer`, Streamlit reruns, parses the upload, and rebuilds the iframe with new data.
+  - Reads `Monthly_Predictions` and `MAPE_Summary` from the bundled Excel on startup.
+  - Parses each sheet into JSON records that match the field names the React UI expects (`itemCode`, `predictedAction`, `error`, `directionCorrect`, `itemMape`, etc.).
+  - Inlines all JSX/HTML files into a single self-contained HTML document and serves it via `st.components.v1.html` as a full-viewport iframe.
+  - A hidden `st.file_uploader` lives off-screen and acts as a one-way bridge: React drop zones inject files into it via `DataTransfer`, Streamlit re-runs, parses the upload, and rebuilds the iframe with new data + MAPE summary.
   - A sentinel filename (`__RESET_TO_BUNDLED__.csv`) signals a reset to bundled data through the same channel.
   - Server-side validation errors are surfaced inside the iframe as a toast.
 - **React side** (`design_ref/`)
   - React 18 + Babel-standalone (in-browser JSX compile) loaded from unpkg.
   - All visualisations are hand-rolled SVGs (no chart library) so the design is fully controllable.
-  - Periods are auto-detected from the data; charts that need ≥2 periods (year-over-year, Sankey) gracefully fall back when not available.
+  - Periods are auto-detected from the data; charts that need ≥2 periods (Sankey, period-to-period shifts) gracefully fall back when not available.
+  - Mobile-responsive: under 900 px viewport the sidebar collapses, multi-column grids reflow, and the tab strip becomes horizontally scrollable.
 
 ## Run locally
 
@@ -62,11 +71,13 @@ Open <http://localhost:8501>.
 
 ## Upload format
 
-The Monthly_Predictions sheet (or any sheet whose name contains "month", or a single-sheet CSV) must have these 14 columns:
+The `Monthly_Predictions` sheet (or any sheet whose name contains "month", or a single-sheet CSV) must have these 15 columns:
 
-`Item Code · Item Description · Is HV · Tier · Period · Prev Closing Balance · Predicted Closing Bal · Actual Closing Bal · Difference · Predicted Action · Actual Action · Direction Correct · Quantity · Item MAPE (%)`
+`Item Code · Item Description · Is HV · Tier · Period · Prev Closing Balance · Predicted Closing Bal · Actual Closing Bal · Error · Difference · Predicted Action · Actual Action · Direction Correct · Quantity · Item MAPE (%)`
 
-`Period` is `YYYY-MM`. `Actual Closing Bal`, `Direction Correct`, `Item MAPE (%)` may be NaN (future mode). The dashboard handles future-mode and backtest-mode states automatically — Model Accuracy and direction-correct visuals light up as soon as actuals are present.
+`Period` is `YYYY-MM`. `Actual Closing Bal`, `Actual Action`, `Direction Correct`, `Error`, and `Item MAPE (%)` may be NaN (future mode). The dashboard handles future-mode and backtest-mode states automatically — Model Accuracy visuals (portfolio predicted vs actual, direction accuracy ring, MAPE distribution, MAPE summary table) light up as soon as actuals are present.
+
+A separate `MAPE_Summary` sheet with columns `Period · Model · MAPE All Items (%) · MAPE HV Items (%) · Items Predicted · Items Deliver · Items Return · Tier` is optional but recommended — its monthly rows feed the MAPE Summary card on the Model Accuracy tab.
 
 ## Deployment
 

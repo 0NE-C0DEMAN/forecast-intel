@@ -2,7 +2,9 @@
 
 /* ===== 1. ABC PARETO ANALYSIS ===== */
 function ABCPareto({ data }) {
-  // Aggregate total movement quantity per item across the period
+  const [showClass, setShowClass] = React.useState('A');
+  const fmtK = v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : Math.round(v).toLocaleString();
+
   const byItem = {};
   data.forEach(d => {
     const k = d.itemCode;
@@ -11,84 +13,134 @@ function ABCPareto({ data }) {
   });
   const sorted = Object.values(byItem).filter(x => x.totalQty > 0).sort((a, b) => b.totalQty - a.totalQty);
   const totalQty = sorted.reduce((s, x) => s + x.totalQty, 0) || 1;
-  // Build cumulative
+  const totalItems = sorted.length || 1;
+
   let cum = 0;
   const points = sorted.map((it, i) => {
     cum += it.totalQty;
     const cumPct = cum / totalQty;
-    let cls = 'C';
-    if (cumPct <= 0.8) cls = 'A';
-    else if (cumPct <= 0.95) cls = 'B';
-    return { ...it, rank: i + 1, qty: it.totalQty, cumQty: cum, cumPct, class: cls };
+    return { ...it, rank: i + 1, qty: it.totalQty, cumPct, class: cumPct <= 0.8 ? 'A' : cumPct <= 0.95 ? 'B' : 'C' };
   });
-  const aCount = points.filter(p => p.class === 'A').length;
-  const bCount = points.filter(p => p.class === 'B').length;
-  const cCount = points.filter(p => p.class === 'C').length;
-  const aPct = ((aCount / points.length) * 100).toFixed(1);
 
-  const w = 880, h = 200, padL = 50, padR = 50, padT = 14, padB = 32;
-  const cW = w - padL - padR, cH = h - padT - padB;
-  const xPos = (i) => padL + (points.length === 1 ? cW / 2 : (i / (points.length - 1)) * cW);
-  const yLine = (p) => padT + cH - p * cH;
-  const cumPath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xPos(i)} ${yLine(p.cumPct)}`).join(' ');
-  const maxQty = points[0]?.qty || 1;
-  const yBar = (q) => padT + cH - (q / maxQty) * cH;
+  const aItems = points.filter(p => p.class === 'A');
+  const bItems = points.filter(p => p.class === 'B');
+  const cItems = points.filter(p => p.class === 'C');
+  const aVol = aItems.reduce((s, p) => s + p.qty, 0);
+  const bVol = bItems.reduce((s, p) => s + p.qty, 0);
+  const cVol = cItems.reduce((s, p) => s + p.qty, 0);
+
+  const classes = [
+    { id: 'A', label: 'Class A', color: '#059669', items: aItems, vol: aVol, desc: 'drives 80% of volume' },
+    { id: 'B', label: 'Class B', color: '#D97706', items: bItems, vol: bVol, desc: '80–95% of volume' },
+    { id: 'C', label: 'Class C', color: '#9CA3AF', items: cItems, vol: cVol, desc: 'long tail' },
+  ];
+  const activeClass = classes.find(c => c.id === showClass);
+  const maxBarQty = activeClass?.items[0]?.qty || 1;
 
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 14, marginBottom: 10, fontSize: 11 }}>
-        <ABCBadge label="A" pct="80% volume" count={aCount} pctOfItems={aPct} color="#059669" />
-        <ABCBadge label="B" pct="80–95% volume" count={bCount} color="#D97706" />
-        <ABCBadge label="C" pct="long tail" count={cCount} color="var(--text-3)" />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* ── KPI badges ── */}
+      <div style={{ display: 'flex', gap: 10 }}>
+        {classes.map(c => (
+          <ABCBadge key={c.id} label={c.id} pct={c.desc}
+            count={c.items.length} pctOfItems={((c.items.length / totalItems) * 100).toFixed(1)}
+            color={c.color} />
+        ))}
       </div>
-      <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ overflow: 'visible' }}>
-        {[0,.25,.5,.75,1].map((p,i) => { const yy = padT + cH - cH * p; return <g key={i}><line x1={padL} y1={yy} x2={w-padR} y2={yy} stroke="#F3F4F6" /><text x={padL-6} y={yy+3.5} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(p*100)}%</text></g>; })}
-        {/* Bars */}
-        {points.map((p, i) => { const x = xPos(i); const bw = Math.max(cW / points.length - 0.5, 0.5); return <rect key={i} x={x - bw/2} y={yBar(p.qty)} width={bw} height={padT + cH - yBar(p.qty)} fill={p.class === 'A' ? '#059669' : p.class === 'B' ? '#D97706' : '#9CA3AF'} opacity={.55} />; })}
-        {/* Cumulative line */}
-        <path d={cumPath} fill="none" stroke="var(--accent)" strokeWidth={2} />
-        {/* 80% reference line */}
-        <line x1={padL} y1={yLine(0.8)} x2={w-padR} y2={yLine(0.8)} stroke="#059669" strokeDasharray="4,4" strokeWidth={1} />
-        <text x={w-padR-2} y={yLine(0.8) - 4} textAnchor="end" fontSize="10" fill="#059669" fontWeight="600">80% line</text>
-        {/* X axis */}
-        <text x={padL} y={padT+cH+16} fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">#1</text>
-        <text x={(padL+w-padR)/2} y={padT+cH+16} textAnchor="middle" fontSize="10" fill="var(--text-3)">{points.length} items ranked by total quantity</text>
-        <text x={w-padR} y={padT+cH+16} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">#{points.length}</text>
-      </svg>
-      <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-        <ABCColumn title="Class A · top contributors" items={points.filter(p => p.class === 'A').slice(0, 6)} color="#059669" totalQty={totalQty} />
-        <ABCColumn title="Class B" items={points.filter(p => p.class === 'B').slice(0, 6)} color="#D97706" totalQty={totalQty} />
-        <ABCColumn title="Class C · long tail" items={points.filter(p => p.class === 'C').slice(0, 6)} color="#9CA3AF" totalQty={totalQty} />
+
+      {/* ── The 80/20 story ── two stacked contrast bars ── */}
+      <div style={{ background: '#FAFBFC', borderRadius: 10, padding: '14px 16px', border: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-2)', marginBottom: 12 }}>
+          The 80 / 20 Rule — how concentrated is your volume?
+        </div>
+        {[
+          { label: 'SKU count', values: classes.map(c => ({ pct: c.items.length / totalItems, count: c.items.length, color: c.color, id: c.id })) },
+          { label: 'Volume share', values: classes.map(c => ({ pct: c.vol / totalQty, count: c.vol, color: c.color, id: c.id, fmt: true })) },
+        ].map((row, ri) => (
+          <div key={ri} style={{ marginBottom: ri === 0 ? 10 : 0 }}>
+            <div style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 600, marginBottom: 4 }}>{row.label}</div>
+            <div style={{ display: 'flex', height: 28, borderRadius: 6, overflow: 'hidden', gap: 1 }}>
+              {row.values.map((v, vi) => (
+                <div key={vi} style={{ flex: v.pct, background: v.color, opacity: 0.82, display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: v.pct > 0.06 ? 0 : 0, overflow: 'hidden', transition: 'flex .4s' }}
+                  title={`${v.id}: ${(v.pct * 100).toFixed(1)}%`}>
+                  {v.pct > 0.09 && (
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>
+                      {v.id} · {(v.pct * 100).toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
+          {classes.map(c => (
+            <span key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-2)' }}>
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: c.color, opacity: .85 }}></span>
+              Class {c.id} — {c.items.length} items, {((c.vol / totalQty) * 100).toFixed(0)}% of volume
+            </span>
+          ))}
+        </div>
       </div>
+
+      {/* ── Top items drill-down per class ── */}
+      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+        {/* Tab selector */}
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', background: '#FAFBFC' }}>
+          {classes.map(c => (
+            <button key={c.id} onClick={() => setShowClass(c.id)}
+              style={{ flex: 1, padding: '10px 0', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                background: showClass === c.id ? '#fff' : 'transparent',
+                color: showClass === c.id ? c.color : 'var(--text-3)',
+                borderBottom: showClass === c.id ? `2px solid ${c.color}` : '2px solid transparent',
+                transition: 'all .15s' }}>
+              {c.label}
+              <span style={{ fontSize: 10, fontWeight: 500, marginLeft: 5, color: 'var(--text-3)' }}>({c.items.length})</span>
+            </button>
+          ))}
+        </div>
+        {/* Bar list for active class */}
+        <div style={{ padding: '12px 16px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 10 }}>
+            Top items in Class {activeClass?.id} — ranked by movement quantity.
+            Showing {Math.min(activeClass?.items.length, 15)} of {activeClass?.items.length}.
+          </div>
+          {(activeClass?.items || []).slice(0, 15).map((it, i) => (
+            <div key={it.itemCode} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--mono)', width: 24, textAlign: 'right', flexShrink: 0 }}>#{it.rank}</span>
+              <div style={{ width: 160, fontSize: 11, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0, color: 'var(--text)' }} title={it.description}>
+                {it.isHV && <span style={{ color: 'var(--accent)', marginRight: 3 }}>★</span>}{it.description}
+              </div>
+              <div style={{ flex: 1, height: 16, borderRadius: 4, background: '#F3F4F6', overflow: 'hidden' }}>
+                <div style={{ height: '100%', borderRadius: 4, width: `${(it.qty / maxBarQty) * 100}%`, background: activeClass.color, opacity: .75, transition: 'width .4s' }} />
+              </div>
+              <span style={{ width: 54, fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 700, color: activeClass.color, textAlign: 'right', flexShrink: 0 }}>{fmtK(it.qty)}</span>
+              <span style={{ width: 40, fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text-3)', textAlign: 'right', flexShrink: 0 }}>{((it.qty / totalQty) * 100).toFixed(1)}%</span>
+            </div>
+          ))}
+          {(activeClass?.items.length || 0) === 0 && (
+            <div style={{ textAlign: 'center', color: 'var(--text-3)', fontSize: 12, padding: 20 }}>No items in this class</div>
+          )}
+        </div>
+      </div>
+
     </div>
   );
 }
 
 function ABCBadge({ label, pct, count, pctOfItems, color }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px', borderRadius: 8, background: color + '15', border: '1px solid ' + color + '40' }}>
-      <div style={{ width: 22, height: 22, borderRadius: 6, background: color, color: '#fff', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{label}</div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderRadius: 10, background: '#fff', border: '1px solid var(--border)', borderLeft: `4px solid ${color}` }}>
+      <div style={{ width: 26, height: 26, borderRadius: 7, background: color, color: '#fff', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{label}</div>
       <div>
         <div style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 500 }}>{pct}</div>
-        <div style={{ fontSize: 12, fontWeight: 700, color, fontFamily: 'var(--mono)' }}>{count} items{pctOfItems && <span style={{ fontWeight: 500, color: 'var(--text-3)', fontSize: 10 }}> · {pctOfItems}%</span>}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color, fontFamily: 'var(--mono)' }}>{count} items{pctOfItems && <span style={{ fontWeight: 500, color: 'var(--text-3)', fontSize: 10 }}> · {pctOfItems}% of SKUs</span>}</div>
       </div>
     </div>
   );
 }
 
-function ABCColumn({ title, items, color, totalQty }) {
-  return (
-    <div style={{ background: '#FAFBFC', borderRadius: 8, padding: '10px 12px' }}>
-      <div style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 8 }}>{title}</div>
-      {items.map((it, i) => (
-        <div key={it.itemCode} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: i < items.length - 1 ? '1px solid #F3F4F6' : 'none' }}>
-          <div style={{ flex: 1, fontSize: 11, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={it.description}>{it.description}</div>
-          <div style={{ fontSize: 10, fontFamily: 'var(--mono)', color, fontWeight: 700 }}>{((it.qty/totalQty)*100).toFixed(1)}%</div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 /* ===== 2. STOCK-OUT & EXCESS RISK WATCH ===== */
 function RiskWatchlist({ data, allData, currentPeriod }) {
@@ -137,7 +189,7 @@ function RiskWatchlist({ data, allData, currentPeriod }) {
     }
   });
 
-  stockOuts.sort((a, b) => (a.severity === 'critical' ? -1 : 1));
+  stockOuts.sort((a, b) => (a.severity === 'critical' ? -1 : b.severity === 'critical' ? 1 : 0));
   excess.sort((a, b) => (b.predictedClosingBal || 0) - (a.predictedClosingBal || 0));
 
   return (
@@ -151,25 +203,32 @@ function RiskWatchlist({ data, allData, currentPeriod }) {
 
 function RiskColumn({ title, subtitle, items, color, icon, emptyMsg }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <div style={{ width: 22, height: 22, borderRadius: 6, background: color + '15', color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800 }}>{icon}</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 700 }}>{title}</div>
-          <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{subtitle}</div>
+    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+      {/* Coloured header band */}
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: color + '08' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 24, height: 24, borderRadius: 6, background: color + '20', color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>{icon}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>{title}</div>
+            <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{subtitle}</div>
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 800, color, fontFamily: 'var(--mono)', background: color + '15', padding: '2px 8px', borderRadius: 6 }}>{items.length}</div>
         </div>
-        <div style={{ fontSize: 11, fontWeight: 700, color, fontFamily: 'var(--mono)' }}>{items.length}</div>
       </div>
-      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {/* Items list */}
+      <div style={{ padding: '6px 16px 10px' }}>
         {items.length === 0 ? (
-          <div style={{ fontSize: 11, color: 'var(--text-3)', padding: '14px 4px', textAlign: 'center' }}>{emptyMsg}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-3)', padding: '16px 4px', textAlign: 'center' }}>{emptyMsg}</div>
         ) : items.map((item, i) => (
-          <div key={item.itemCode + i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: i < items.length - 1 ? '1px solid #F3F4F6' : 'none' }}>
+          <div key={item.itemCode + i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: i < items.length - 1 ? '1px solid #F3F4F6' : 'none' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 11, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.description}>{item.description}</div>
-              <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{item.reason}</div>
+              <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 1 }}>{item.reason}</div>
             </div>
-            {item.severity === 'critical' && <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700, background: '#DC2626', color: '#fff' }}>!</span>}
+            {item.severity === 'critical'
+              ? <span style={{ padding: '2px 6px', borderRadius: 5, fontSize: 9, fontWeight: 700, background: '#DC2626', color: '#fff', flexShrink: 0 }}>CRITICAL</span>
+              : <span style={{ padding: '2px 6px', borderRadius: 5, fontSize: 9, fontWeight: 600, background: color + '15', color, flexShrink: 0 }}>WATCH</span>
+            }
           </div>
         ))}
       </div>
@@ -179,68 +238,177 @@ function RiskColumn({ title, subtitle, items, color, icon, emptyMsg }) {
 
 /* ===== 3. ACTION CALENDAR HEATMAP ===== */
 function ActionCalendarHeatmap({ data }) {
-  const periods = [...new Set(data.map(d => d.period))].sort();
-  // Top 30 items by total quantity for legibility
-  const byItem = {};
-  data.forEach(d => { const k = d.itemCode; if (!byItem[k]) byItem[k] = { itemCode: k, description: d.description, isHV: d.isHV, totalQty: 0, byPeriod: {} }; byItem[k].totalQty += (d.quantity || 0); byItem[k].byPeriod[d.period] = d; });
-  const items = Object.values(byItem).sort((a, b) => b.totalQty - a.totalQty).slice(0, 30);
-
-  const ac = (a) => a === 'Deliver' ? '#059669' : a === 'Return' ? '#DC2626' : a === 'No Change' ? '#D97706' : '#F3F4F6';
-  const fmt = p => p.split('-')[1];
-  const yearOf = p => p.split('-')[0];
-  const labelEvery = periods.length > 24 ? 3 : 1;
+  const [hvOnly, setHvOnly] = React.useState(false);
+  const [sortBy, setSortBy] = React.useState('qty');
   const [hover, setHover] = React.useState(null);
+  const [mousePos, setMousePos] = React.useState({ x: 0, y: 0 });
 
-  const colW = Math.max(14, Math.min(32, 800 / periods.length));
-  const rowH = 18;
+  const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const ac  = a => a === 'Deliver' ? '#059669' : a === 'Return' ? '#DC2626' : a === 'No Change' ? '#D97706' : null;
+  const acBg= a => a === 'Deliver' ? 'rgba(5,150,105,.12)' : a === 'Return' ? 'rgba(220,38,38,.1)' : 'rgba(217,119,6,.1)';
+  const fmtPeriod = p => { const m = p.match(/^(\d{4})-(\d{2})$/); return m ? MO[parseInt(m[2])-1] + " '" + m[1].slice(2) : p; };
+  const yearOf = p => p.split('-')[0];
+
+  const periods = [...new Set(data.map(d => d.period))].sort();
+
+  const byItem = React.useMemo(() => {
+    const map = {};
+    data.forEach(d => {
+      if (!map[d.itemCode]) map[d.itemCode] = { itemCode: d.itemCode, description: d.description, isHV: d.isHV, totalQty: 0, byPeriod: {}, actions: [] };
+      map[d.itemCode].totalQty += (d.quantity || 0);
+      map[d.itemCode].byPeriod[d.period] = d;
+      map[d.itemCode].actions.push(d.predictedAction);
+    });
+    return map;
+  }, [data]);
+
+  const items = React.useMemo(() => {
+    let arr = Object.values(byItem);
+    if (hvOnly) arr = arr.filter(it => it.isHV);
+    // streak: count of consecutive same action at the end
+    arr = arr.map(it => {
+      const sortedActions = periods.map(p => it.byPeriod[p]?.predictedAction).filter(Boolean);
+      let streak = 0;
+      const last = sortedActions[sortedActions.length - 1];
+      for (let i = sortedActions.length - 1; i >= 0; i--) { if (sortedActions[i] === last) streak++; else break; }
+      // dominant action
+      const counts = {};
+      sortedActions.forEach(a => { counts[a] = (counts[a] || 0) + 1; });
+      const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
+      return { ...it, streak, lastAction: last, dominant, dominantCount: counts[dominant] || 0, totalPeriods: sortedActions.length };
+    });
+    if (sortBy === 'qty') arr.sort((a, b) => b.totalQty - a.totalQty);
+    else if (sortBy === 'streak') arr.sort((a, b) => b.streak - a.streak);
+    else if (sortBy === 'hv') arr.sort((a, b) => (b.isHV ? 1 : 0) - (a.isHV ? 1 : 0) || b.totalQty - a.totalQty);
+    return arr.slice(0, 35);
+  }, [byItem, hvOnly, sortBy, periods]);
+
+  const colW = Math.max(28, Math.min(44, Math.floor(760 / periods.length)));
+  const rowH = 26;
+
+
+  const handleMouseMove = (e) => setMousePos({ x: e.clientX, y: e.clientY });
 
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10, fontSize: 11 }}>
-        <span style={{ color: 'var(--text-3)' }}>Top {items.length} items × {periods.length} months · cell color = predicted action</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}><span style={{ width: 10, height: 10, borderRadius: 2, background: '#059669' }}></span><span>Deliver</span></div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: '#DC2626' }}></span><span>Return</span></div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: '#D97706' }}></span><span>No Change</span></div>
+    <div onMouseMove={handleMouseMove}>
+      {/* Controls */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, fontSize: 11 }}>
+          {[['Deliver','#059669'],['Return','#DC2626'],['No Change','#D97706']].map(([a,c]) => (
+            <span key={a} style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-2)' }}>
+              <span style={{ width: 12, height: 12, borderRadius: 3, background: c, opacity: .85 }}></span>{a}
+            </span>
+          ))}
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Sort:</span>
+          {[['qty','By Volume'],['streak','By Streak'],['hv','HV First']].map(([v,l]) => (
+            <button key={v} onClick={() => setSortBy(v)} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6, border: '1px solid', borderColor: sortBy === v ? 'var(--accent)' : 'var(--border)', background: sortBy === v ? 'var(--accent)' : '#fff', color: sortBy === v ? '#fff' : 'var(--text-2)', cursor: 'pointer', fontFamily: 'var(--font)', fontWeight: 600 }}>{l}</button>
+          ))}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, cursor: 'pointer', fontWeight: 600, color: hvOnly ? 'var(--accent)' : 'var(--text-3)' }}>
+            <input type="checkbox" checked={hvOnly} onChange={e => setHvOnly(e.target.checked)} style={{ accentColor: 'var(--accent)', margin: 0 }} />HV Only
+          </label>
+        </div>
+        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{items.length} items × {periods.length} periods</span>
       </div>
-      <div style={{ overflow: 'auto', maxHeight: 600, position: 'relative' }}>
-        <table style={{ borderCollapse: 'separate', borderSpacing: 1, fontSize: 10 }}>
+
+      {/* Grid */}
+      <div style={{ overflow: 'auto', maxHeight: 660, position: 'relative', border: '1px solid var(--border)', borderRadius: 10 }}>
+        <table style={{ borderCollapse: 'separate', borderSpacing: 2, fontSize: 11, tableLayout: 'fixed' }}>
           <thead>
             <tr>
-              <th style={{ position: 'sticky', left: 0, background: '#fff', zIndex: 3, padding: 0 }}></th>
-              {periods.map((p, i) => i % labelEvery === 0 ? (
-                <th key={p} style={{ width: colW * labelEvery, fontWeight: 600, fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--mono)', padding: '4px 0', position: 'sticky', top: 0, background: '#fff', zIndex: 2 }} colSpan={labelEvery}>
-                  {fmt(p)}{i === 0 || yearOf(p) !== yearOf(periods[i - 1]) ? <div style={{ fontSize: 8, color: 'var(--accent)', fontWeight: 700 }}>{yearOf(p)}</div> : null}
-                </th>
-              ) : null)}
+              {/* sticky item name col header */}
+              <th style={{ position: 'sticky', left: 0, top: 0, background: '#FAFBFC', zIndex: 4, width: 190, padding: '6px 10px', borderBottom: '2px solid var(--border)', fontSize: 10, color: 'var(--text-3)', textAlign: 'left', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em', whiteSpace: 'nowrap' }}>Item</th>
+              {periods.map((p, i) => {
+                const mo = MO[parseInt(p.split('-')[1]) - 1];
+                const yr = p.split('-')[0].slice(2);
+                const isYearStart = i === 0 || yearOf(p) !== yearOf(periods[i-1]);
+                return (
+                  <th key={p} style={{ width: colW, position: 'sticky', top: 0, background: '#FAFBFC', zIndex: 3, padding: '4px 0', textAlign: 'center', borderBottom: '2px solid var(--border)', borderLeft: isYearStart && i > 0 ? '2px solid var(--accent)' : 'none' }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-2)', fontFamily: 'var(--mono)' }}>{mo}</div>
+                    {isYearStart && <div style={{ fontSize: 9, color: 'var(--accent)', fontWeight: 700, lineHeight: 1 }}>{yr}</div>}
+                  </th>
+                );
+              })}
+              <th style={{ position: 'sticky', right: 0, top: 0, background: '#FAFBFC', zIndex: 4, width: 90, padding: '6px 8px', borderBottom: '2px solid var(--border)', fontSize: 10, color: 'var(--text-3)', textAlign: 'center', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em', whiteSpace: 'nowrap', borderLeft: '1px solid var(--border)' }}>Pattern</th>
             </tr>
           </thead>
           <tbody>
-            {items.map(it => (
-              <tr key={it.itemCode}>
-                <td style={{ position: 'sticky', left: 0, background: '#fff', zIndex: 1, padding: '0 8px 0 0', fontSize: 10, fontWeight: 500, whiteSpace: 'nowrap', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', borderRight: '1px solid var(--border)' }} title={it.description}>
-                  {it.isHV && <span style={{ color: 'var(--accent)', fontWeight: 700, marginRight: 3 }}>★</span>}
-                  {it.description}
+            {items.map((it, ri) => (
+              <tr key={it.itemCode} style={{ background: ri % 2 === 0 ? '#fff' : '#FAFBFC' }}>
+                {/* Sticky item label */}
+                <td style={{ position: 'sticky', left: 0, background: ri % 2 === 0 ? '#fff' : '#FAFBFC', zIndex: 2, padding: '0 10px', borderRight: '1px solid var(--border)', whiteSpace: 'nowrap', maxWidth: 190, overflow: 'hidden', textOverflow: 'ellipsis', height: rowH }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
+                    {it.isHV && <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>★</span>}
+                    <span style={{ fontSize: 11, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text)' }} title={it.description}>{it.description}</span>
+                  </div>
                 </td>
-                {periods.map(p => {
+                {/* Action cells */}
+                {periods.map((p, pi) => {
                   const cell = it.byPeriod[p];
                   const action = cell?.predictedAction;
-                  const isHover = hover && hover.code === it.itemCode && hover.period === p;
+                  const col = ac(action);
+                  const isHov = hover?.code === it.itemCode && hover?.period === p;
+                  const isYearStart = pi > 0 && yearOf(p) !== yearOf(periods[pi-1]);
                   return (
-                    <td key={p} style={{ width: colW, height: rowH, background: ac(action), opacity: action ? (isHover ? 1 : 0.85) : 0.3, cursor: 'pointer', transition: 'opacity .12s', borderRadius: 2 }}
-                      onMouseEnter={() => setHover({ code: it.itemCode, period: p, item: it, cell })} onMouseLeave={() => setHover(null)} />
+                    <td key={p}
+                      onMouseEnter={() => setHover({ code: it.itemCode, period: p, item: it, cell })}
+                      onMouseLeave={() => setHover(null)}
+                      style={{ width: colW, height: rowH, padding: 1, cursor: cell ? 'pointer' : 'default', borderLeft: isYearStart ? '2px solid var(--accent)' : 'none' }}>
+                      <div style={{
+                        height: '100%', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: col ? col : '#F3F4F6',
+                        opacity: col ? (isHov ? 1 : 0.78) : 0.35,
+                        transition: 'opacity .1s',
+                        boxShadow: isHov ? `0 0 0 2px ${col}` : 'none',
+                      }}>
+                        {colW >= 36 && col && (
+                          <span style={{ fontSize: 9, fontWeight: 800, color: '#fff', letterSpacing: '.02em', userSelect: 'none' }}>
+                            {action === 'Deliver' ? 'D' : action === 'Return' ? 'R' : 'N'}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                   );
                 })}
+                {/* Pattern summary */}
+                <td style={{ position: 'sticky', right: 0, background: ri % 2 === 0 ? '#fff' : '#FAFBFC', zIndex: 2, padding: '0 8px', textAlign: 'center', borderLeft: '1px solid var(--border)', height: rowH }}>
+                  {it.dominant && (
+                    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: ac(it.dominant), background: acBg(it.dominant), padding: '1px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>
+                        {it.dominantCount}× {it.dominant === 'No Change' ? 'NC' : it.dominant.slice(0,3)}
+                      </span>
+                      {it.streak >= 3 && (
+                        <span style={{ fontSize: 9, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{it.streak} streak</span>
+                      )}
+                    </div>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        {hover && hover.cell && (
-          <div style={{ position: 'fixed', pointerEvents: 'none', background: '#111827', color: '#fff', padding: '8px 12px', borderRadius: 6, fontSize: 11, zIndex: 1000, transform: 'translate(20px, 20px)', boxShadow: '0 4px 12px rgba(0,0,0,.2)', left: 0, top: 0 }} ref={el => { if (!el) return; const move = (e) => { el.style.left = e.clientX + 'px'; el.style.top = e.clientY + 'px'; }; document.addEventListener('mousemove', move, { once: true }); }}>
-            <div style={{ fontWeight: 700 }}>{hover.item.description}</div>
-            <div style={{ color: '#9CA3AF', fontFamily: 'var(--mono)' }}>{hover.period} · {hover.cell.predictedAction} · qty {hover.cell.quantity}</div>
-          </div>
-        )}
       </div>
+
+      {/* Mouse-tracking tooltip */}
+      {hover?.cell && (
+        <div style={{
+          position: 'fixed', pointerEvents: 'none', zIndex: 9999,
+          left: mousePos.x + 14, top: mousePos.y + 14,
+          background: '#1F2937', color: '#fff', borderRadius: 8,
+          padding: '10px 14px', fontSize: 11, boxShadow: '0 8px 24px rgba(0,0,0,.2)',
+          maxWidth: 240, lineHeight: 1.5,
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>{hover.item.description}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, color: '#D1D5DB' }}>
+            <span>{fmtPeriod(hover.period)}</span>
+            <span style={{ color: ac(hover.cell.predictedAction), fontWeight: 700 }}>{hover.cell.predictedAction}</span>
+            {hover.cell.quantity != null && <span>Qty: {Math.round(hover.cell.quantity).toLocaleString()}</span>}
+            {hover.cell.predictedClosingBal != null && <span>Pred. Bal: {Math.round(hover.cell.predictedClosingBal).toLocaleString()}</span>}
+            {hover.cell.actualClosingBal != null && <span>Actual Bal: {Math.round(hover.cell.actualClosingBal).toLocaleString()}</span>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -266,7 +434,7 @@ function YearOverYearComparison({ allData }) {
     };
   });
 
-  const allValues = series.flatMap(s => s.months.flatMap(m => [m.deliver, m.return]));
+  const allValues = series.flatMap(s => s.months.map(m => Math.abs(m.net)));
   const max = Math.max(...allValues, 1);
   const fmtK = v => v >= 1e3 ? (v / 1e3).toFixed(1) + 'K' : Math.round(v);
 
@@ -291,15 +459,15 @@ function YearOverYearComparison({ allData }) {
         {[0,.25,.5,.75,1].map((p,i) => { const yy = padT + cH - cH * p; return <g key={i}><line x1={padL} y1={yy} x2={w-padR} y2={yy} stroke="#F3F4F6" /><text x={padL-6} y={yy+3.5} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{fmtK(max*p)}</text></g>; })}
         {series.map((s, sIdx) => {
           const c = yearColor(sIdx);
-          const path = s.months.map((m, i) => m.hasData ? `${i === 0 || !s.months[i-1].hasData ? 'M' : 'L'} ${x(i)} ${y(m.deliver)}` : '').filter(Boolean).join(' ');
+          const path = s.months.map((m, i) => m.hasData ? `${i === 0 || !s.months[i-1].hasData ? 'M' : 'L'} ${x(i)} ${y(Math.abs(m.net))}` : '').filter(Boolean).join(' ');
           return <g key={s.year}>
             <path d={path} fill="none" stroke={c.stroke} strokeWidth={2} opacity={c.opacity} strokeLinejoin="round" />
-            {s.months.map((m, i) => m.hasData && <circle key={i} cx={x(i)} cy={y(m.deliver)} r={3} fill={c.stroke} opacity={c.opacity} />)}
+            {s.months.map((m, i) => m.hasData && <circle key={i} cx={x(i)} cy={y(Math.abs(m.net))} r={3} fill={c.stroke} opacity={c.opacity} />)}
           </g>;
         })}
         {months.map((m, i) => <text key={m} x={x(i)} y={padT+cH+16} textAnchor="middle" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{m}</text>)}
       </svg>
-      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>Deliver volume by month, layered across years.</div>
+      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>Net movement (|Deliver − Return|) by month, layered across years.</div>
 
       {/* MoM table for current year */}
       <div style={{ marginTop: 18 }}>
@@ -338,6 +506,7 @@ function YearOverYearComparison({ allData }) {
 
 /* ===== 5. AUTO-INSIGHTS PANEL ===== */
 function AutoInsights({ allData, currentPeriod }) {
+  const fmtQty = v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1000 ? (v/1000).toFixed(1)+'K' : Math.round(v).toLocaleString();
   const periods = [...new Set(allData.map(d => d.period))].sort();
   const insights = [];
 
@@ -349,7 +518,7 @@ function AutoInsights({ allData, currentPeriod }) {
   insights.push({
     severity: net >= 0 ? 'positive' : 'negative', icon: net >= 0 ? '↑' : '↓',
     title: `Net inventory ${net >= 0 ? 'expanding' : 'contracting'} this period`,
-    body: `${(Math.abs(net) >= 1000 ? (Math.abs(net) / 1000).toFixed(1) + 'K' : Math.abs(net))} units net ${net >= 0 ? 'inflow' : 'outflow'} (${(delQ/1000).toFixed(1)}K deliver vs ${(retQ/1000).toFixed(1)}K return).`,
+    body: `${fmtQty(Math.abs(net))} units net ${net >= 0 ? 'inflow' : 'outflow'} (${fmtQty(delQ)} deliver vs ${fmtQty(retQ)} return).`,
   });
 
   // Insight 2: HV concentration
@@ -428,13 +597,13 @@ function AutoInsights({ allData, currentPeriod }) {
   const sevBg = { positive: 'rgba(5,150,105,.08)', negative: 'rgba(220,38,38,.07)', warning: 'rgba(217,119,6,.08)', critical: 'rgba(220,38,38,.1)', info: 'rgba(79,70,229,.06)' };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
       {insights.map((ins, i) => (
-        <div key={i} style={{ display: 'flex', gap: 12, padding: '12px 14px', background: sevBg[ins.severity], border: `1px solid ${sevColor[ins.severity]}25`, borderRadius: 10 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 7, background: sevColor[ins.severity], color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, flexShrink: 0 }}>{ins.icon}</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', marginBottom: 2 }}>{ins.title}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-2)', lineHeight: 1.5 }}>{ins.body}</div>
+        <div key={i} style={{ display: 'flex', gap: 12, padding: '14px 16px', background: '#fff', border: `1px solid var(--border)`, borderRadius: 12, borderLeft: `4px solid ${sevColor[ins.severity]}` }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: sevBg[ins.severity], color: sevColor[ins.severity], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, flexShrink: 0 }}>{ins.icon}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', marginBottom: 3, lineHeight: 1.3 }}>{ins.title}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-2)', lineHeight: 1.55 }}>{ins.body}</div>
           </div>
         </div>
       ))}

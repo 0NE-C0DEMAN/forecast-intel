@@ -111,148 +111,110 @@ function ClosingBalancePortfolio({ data }) {
   );
 }
 
-/* ===== JAN VS FEB COMPARISON ===== */
-function ComparisonChart({ janData, febData }) {
-  const cats = ['Deliver', 'Return', 'No Change'];
-  const jc = cats.map(c => janData.filter(d => d.predictedAction === c).length);
-  const fc = cats.map(c => febData.filter(d => d.predictedAction === c).length);
-  const max = Math.max(...jc, ...fc, 1);
-  const colors = ['#059669', '#DC2626', '#D97706'];
-  const bW = 32, gap = 6, gGap = 50, cH = 150, pL = 40, pT = 20, pB = 30;
-  const tW = pL + cats.length * (bW * 2 + gap) + (cats.length - 1) * gGap + 30;
-  const sH = cH + pT + pB;
-  const [hg, setHg] = React.useState(null);
-  return (
-    <svg width="100%" height={sH} viewBox={`0 0 ${tW} ${sH}`} style={{ overflow: 'visible' }}>
-      {[0,.25,.5,.75,1].map((p,i) => { const y = pT+cH-cH*p; return <g key={i}><line x1={pL} y1={y} x2={tW-10} y2={y} stroke="#F3F4F6" /><text x={pL-6} y={y+3.5} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(max*p)}</text></g>; })}
-      {cats.map((c,ci) => { const x0=pL+14+ci*(bW*2+gap+gGap); const jh=Math.max(jc[ci]/max*cH,3); const fh=Math.max(fc[ci]/max*cH,3); const dim=hg!=null&&hg!==ci; return <g key={ci} style={{opacity:dim?.65:1,transition:'opacity .15s',cursor:'pointer'}} onMouseEnter={()=>setHg(ci)} onMouseLeave={()=>setHg(null)}><rect x={x0} y={pT+cH-jh} width={bW} height={jh} rx={5} fill={colors[ci]} opacity={.35}/><rect x={x0+bW+gap} y={pT+cH-fh} width={bW} height={fh} rx={5} fill={colors[ci]} opacity={.85}/><text x={x0+bW/2} y={pT+cH-jh-6} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--text-2)" fontFamily="var(--mono)">{jc[ci]}</text><text x={x0+bW+gap+bW/2} y={pT+cH-fh-6} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--text)" fontFamily="var(--mono)">{fc[ci]}</text><text x={x0+bW+gap/2} y={pT+cH+18} textAnchor="middle" fontSize="11" fill="var(--text-2)" fontWeight="500">{c}</text></g>; })}
-      <rect x={tW-100} y={4} width={10} height={10} rx={3} fill="var(--text-3)" opacity={.35}/><text x={tW-86} y={12.5} fontSize="10" fill="var(--text-3)">Jan</text>
-      <rect x={tW-54} y={4} width={10} height={10} rx={3} fill="var(--text-2)" opacity={.85}/><text x={tW-40} y={12.5} fontSize="10" fill="var(--text-3)">Feb</text>
-    </svg>
-  );
-}
-
-/* ===== QUANTITY DISTRIBUTION HISTOGRAM ===== */
-function QuantityHistogram({ data }) {
-  const buckets = [0, 10, 50, 100, 500, 1000, 5000, Infinity];
-  const labels = ['0–10', '10–50', '50–100', '100–500', '500–1K', '1K–5K', '5K+'];
-  const qtys = data.map(d => d.quantity || 0).filter(q => q > 0);
-  const counts = labels.map((_, i) => qtys.filter(q => q > buckets[i] && q <= buckets[i + 1]).length);
-  const max = Math.max(...counts, 1);
-  const bW = 56, cH = 240, pL = 44, pT = 14, pB = 44, gap = 14;
-  const tW = pL + labels.length * (bW + gap) + 20;
-  const sH = pT + cH + pB;
-  const [hb, setHb] = React.useState(null);
-  // Color gradient from light to saturated
-  const barColor = (i) => `oklch(0.65 0.18 ${160 + i * 28})`;
-
-  return (
-    <div>
-      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>Number of items by predicted movement quantity bucket.</div>
-      <svg width="100%" height={sH} viewBox={`0 0 ${tW} ${sH}`} style={{ overflow: 'visible' }}>
-        {[0,.25,.5,.75,1].map((p,i) => { const y=pT+cH-cH*p; return <g key={i}><line x1={pL} y1={y} x2={tW-10} y2={y} stroke="#F3F4F6"/>{p>0&&<text x={pL-6} y={y+3.5} textAnchor="end" fontSize="9" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(max*p)}</text>}</g>; })}
-        {counts.map((c, i) => {
-          const x = pL + 4 + i * (bW + gap);
-          const h = Math.max((c / max) * cH, 2);
-          const dim = hb != null && hb !== i;
-          return (
-            <g key={i} style={{ opacity: dim ? .65 : 1, transition: 'opacity .15s', cursor: 'pointer' }}
-              onMouseEnter={() => setHb(i)} onMouseLeave={() => setHb(null)}>
-              <rect x={x} y={pT + cH - h} width={bW} height={h} rx={4} fill={barColor(i)} />
-              {c > 0 && <text x={x + bW / 2} y={pT + cH - h - 5} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--text)" fontFamily="var(--mono)">{c}</text>}
-              <text x={x + bW / 2} y={pT + cH + 14} textAnchor="middle" fontSize="9" fill="var(--text-3)">{labels[i]}</text>
-            </g>
-          );
-        })}
-        <text x={tW / 2} y={pT + cH + 32} textAnchor="middle" fontSize="10" fill="var(--text-3)">Quantity Range (units)</text>
-      </svg>
-    </div>
-  );
-}
-
-/* ===== NET INVENTORY WATERFALL ===== */
-function NetInventoryWaterfall({ periodGroups }) {
-  // periodGroups: [{period, data}] — works for any number of periods
-  const bars = periodGroups.map(pg => {
-    const del = pg.data.filter(d => d.predictedAction === 'Deliver').reduce((s, d) => s + (d.quantity || 0), 0);
-    const ret = pg.data.filter(d => d.predictedAction === 'Return').reduce((s, d) => s + (d.quantity || 0), 0);
-    const net = del - ret;
-    return { period: pg.period, deliver: del, return: ret, net };
-  });
-  const maxVal = Math.max(...bars.flatMap(b => [b.deliver, b.return, Math.abs(b.net)]), 1);
-  const fmtK = v => v >= 1e3 ? (v / 1e3).toFixed(1) + 'K' : Math.round(v);
-  const bW = 28, cH = 130, pL = 44, pT = 16, pB = 32, groupW = 120;
-  const tW = pL + bars.length * groupW + 40;
-  const sH = pT + cH + pB;
-
-  return (
-    <div>
-      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>Net inventory movement per period. Green = deliveries, Red = returns, Blue = net change.</div>
-      <svg width="100%" height={sH} viewBox={`0 0 ${tW} ${sH}`} style={{ overflow: 'visible' }}>
-        <line x1={pL} y1={pT + cH} x2={tW - 10} y2={pT + cH} stroke="#E5E7EB" />
-        {bars.map((b, i) => {
-          const gx = pL + 10 + i * groupW;
-          const dh = (b.deliver / maxVal) * cH * .85;
-          const rh = (b.return / maxVal) * cH * .85;
-          const nh = (Math.abs(b.net) / maxVal) * cH * .85;
-          return (
-            <g key={b.period}>
-              <rect x={gx} y={pT + cH - dh} width={bW} height={dh} rx={4} fill="#059669" opacity={.75} />
-              <text x={gx + bW / 2} y={pT + cH - dh - 4} textAnchor="middle" fontSize="9" fontWeight="700" fill="#059669" fontFamily="var(--mono)">{fmtK(b.deliver)}</text>
-              <rect x={gx + bW + 4} y={pT + cH - rh} width={bW} height={rh} rx={4} fill="#DC2626" opacity={.75} />
-              <text x={gx + bW + 4 + bW / 2} y={pT + cH - rh - 4} textAnchor="middle" fontSize="9" fontWeight="700" fill="#DC2626" fontFamily="var(--mono)">{fmtK(b.return)}</text>
-              <rect x={gx + (bW + 4) * 2} y={pT + cH - nh} width={bW} height={nh} rx={4} fill={b.net >= 0 ? 'var(--accent)' : '#7C3AED'} opacity={.75} />
-              <text x={gx + (bW + 4) * 2 + bW / 2} y={pT + cH - nh - 4} textAnchor="middle" fontSize="9" fontWeight="700" fill={b.net >= 0 ? 'var(--accent)' : '#7C3AED'} fontFamily="var(--mono)">{b.net >= 0 ? '+' : ''}{fmtK(b.net)}</text>
-              <text x={gx + (bW + 4) * 1.5} y={pT + cH + 16} textAnchor="middle" fontSize="11" fill="var(--text-2)" fontWeight="500">{b.period}</text>
-            </g>
-          );
-        })}
-      </svg>
-      <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 4 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-2)' }}><div style={{ width: 10, height: 10, borderRadius: 3, background: '#059669' }}></div>Deliver</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-2)' }}><div style={{ width: 10, height: 10, borderRadius: 3, background: '#DC2626' }}></div>Return</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-2)' }}><div style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--accent)' }}></div>Net Change</div>
-      </div>
-    </div>
-  );
-}
 
 /* ===== ACTION FLOW BETWEEN PERIODS ===== */
-function ActionFlowSankey({ janData, febData }) {
+function ActionFlowSankey({ janData, febData, fromPeriod, toPeriod }) {
   const janMap = {};
   janData.forEach(d => { janMap[d.itemCode] = d.predictedAction; });
+
   const actions = ['Deliver', 'Return', 'No Change'];
-  const colors = { Deliver: '#059669', Return: '#DC2626', 'No Change': '#D97706' };
-  // Build flow matrix
-  const flows = [];
-  actions.forEach(from => {
-    actions.forEach(to => {
-      const count = febData.filter(d => janMap[d.itemCode] === from && d.predictedAction === to).length;
-      if (count > 0) flows.push({ from, to, count });
-    });
-  });
-  const maxFlow = Math.max(...flows.map(f => f.count), 1);
+  const colors  = { Deliver: '#059669', Return: '#DC2626', 'No Change': '#D97706' };
+  const bgLight  = { Deliver: 'rgba(5,150,105,.07)', Return: 'rgba(220,38,38,.06)', 'No Change': 'rgba(217,119,6,.07)' };
+  const fmtP = p => { if (!p) return ''; const [y, m] = p.split('-'); const ns = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${ns[parseInt(m)-1]} ${y}`; };
+
+  // Build one group per "from" action: total + breakdown of where they went
+  const groups = actions.map(from => {
+    const total = janData.filter(d => d.predictedAction === from).length;
+    const breakdown = actions.map(to => ({
+      to,
+      count: febData.filter(d => janMap[d.itemCode] === from && d.predictedAction === to).length,
+      stayed: from === to,
+    }));
+    return { from, total, breakdown };
+  }).filter(g => g.total > 0);
+
+  const maxTotal = Math.max(...groups.map(g => g.total), 1);
+  const totalChanged = groups.reduce((s, g) => s + g.breakdown.filter(b => !b.stayed).reduce((ss, b) => ss + b.count, 0), 0);
+  const totalItems = groups.reduce((s, g) => s + g.total, 0);
+
+  const fromLabel = fmtP(fromPeriod) || 'From';
+  const toLabel   = fmtP(toPeriod)   || 'To';
 
   return (
     <div>
-      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 12 }}>How item actions shifted between Jan and Feb. {flows.reduce((s, f) => f.from !== f.to ? s + f.count : s, 0)} items changed direction.</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {flows.map((f, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 16px 1fr 80px', alignItems: 'center', gap: 8, height: 26 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: colors[f.from], textAlign: 'right' }}>{f.from}</span>
-            <div style={{ height: 14, borderRadius: 4, background: '#F3F4F6', overflow: 'hidden' }}>
-              <div style={{ height: '100%', borderRadius: 4, width: `${f.count / maxFlow * 100}%`, background: colors[f.from], opacity: .5, transition: 'width .4s' }}></div>
-            </div>
-            <span style={{ fontSize: 12, color: 'var(--text-3)', textAlign: 'center' }}>→</span>
-            <div style={{ height: 14, borderRadius: 4, background: '#F3F4F6', overflow: 'hidden', direction: 'rtl' }}>
-              <div style={{ height: '100%', borderRadius: 4, width: `${f.count / maxFlow * 100}%`, background: colors[f.to], opacity: .5, transition: 'width .4s' }}></div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: colors[f.to] }}>{f.to}</span>
-              <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text-3)', fontWeight: 600 }}>{f.count}</span>
-            </div>
+      {/* Summary line */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+          Items in <strong style={{ color: 'var(--text-2)' }}>{fromLabel}</strong> and where their forecast action moved to in <strong style={{ color: 'var(--text-2)' }}>{toLabel}</strong>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 12 }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 18, fontWeight: 800, fontFamily: 'var(--mono)', color: totalChanged > 0 ? '#D97706' : '#059669', lineHeight: 1 }}>{totalChanged}</div>
+            <div style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 600 }}>changed action</div>
           </div>
-        ))}
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 18, fontWeight: 800, fontFamily: 'var(--mono)', color: 'var(--text)', lineHeight: 1 }}>{totalItems - totalChanged}</div>
+            <div style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 600 }}>stayed same</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Column headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 12, marginBottom: 6, paddingLeft: 4 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>In {fromLabel}</div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Moved to in {toLabel}</div>
+      </div>
+
+      {/* One row per "from" action */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {groups.map(g => {
+          const stayedCount   = g.breakdown.find(b => b.stayed)?.count || 0;
+          const changedCount  = g.total - stayedCount;
+          const changedParts  = g.breakdown.filter(b => !b.stayed && b.count > 0);
+          return (
+            <div key={g.from} style={{ background: bgLight[g.from], borderRadius: 10, padding: '12px 14px', border: `1px solid ${colors[g.from]}22` }}>
+              {/* Row header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: colors[g.from], minWidth: 80 }}>{g.from}</span>
+                <span style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'var(--mono)', fontWeight: 600 }}>{g.total} items</span>
+                {changedCount > 0
+                  ? <span style={{ fontSize: 11, color: '#D97706', fontWeight: 600, background: 'rgba(217,119,6,.1)', padding: '2px 8px', borderRadius: 5 }}>⇌ {changedCount} changed</span>
+                  : <span style={{ fontSize: 11, color: '#059669', fontWeight: 600, background: 'rgba(5,150,105,.1)', padding: '2px 8px', borderRadius: 5 }}>✓ all stayed</span>}
+              </div>
+
+              {/* Stacked proportion bar */}
+              <div style={{ display: 'flex', height: 30, borderRadius: 6, overflow: 'hidden', width: `${(g.total / maxTotal) * 100}%`, minWidth: 60, marginBottom: 8 }}>
+                {g.breakdown.filter(b => b.count > 0).map(b => {
+                  const pct = (b.count / g.total) * 100;
+                  return (
+                    <div key={b.to} title={`${b.count} items → ${b.to}`}
+                      style={{ width: `${pct}%`, background: colors[b.to], opacity: b.stayed ? 0.9 : 0.65,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        borderLeft: b.stayed ? 'none' : '2px solid rgba(255,255,255,0.4)',
+                        transition: 'width .3s' }}>
+                      {pct >= 6 && <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', fontFamily: 'var(--mono)' }}>{b.count}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Breakdown pills */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {g.breakdown.filter(b => b.count > 0).map(b => (
+                  <span key={b.to} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600,
+                    color: colors[b.to], background: '#fff', border: `1px solid ${colors[b.to]}33`,
+                    padding: '3px 9px', borderRadius: 20 }}>
+                    {b.stayed
+                      ? <span title="Same action as before">↺ Stayed {b.to}</span>
+                      : <span>→ {b.to}</span>}
+                    <span style={{ fontFamily: 'var(--mono)', fontWeight: 800 }}>{b.count}</span>
+                    <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>({Math.round(b.count / g.total * 100)}%)</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -287,25 +249,57 @@ function BalanceScatter({ data }) {
   );
 }
 
-/* ===== MODEL ACCURACY TABLE ===== */
-function ModelAccuracyTable({ periodGroups }) {
+/* ===== MODEL ACCURACY TABLE — wired to real MAPE summary ===== */
+function ModelAccuracyTable({ periodGroups, modelLabel }) {
+  // Filter to Monthly only — quarterly/half-yearly not used in this app
+  const mapeData = (window.__MAPE_SUMMARY || []).filter(r => (r.model || '').toLowerCase().startsWith('month'));
   const thS = { padding: '10px 14px', textAlign: 'left', fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: '2px solid var(--border)', background: '#FAFBFC' };
   const tdS = { padding: '10px 14px', fontSize: 13, borderBottom: '1px solid #F3F4F6' };
+  const mapeColor = (v) => v == null ? 'var(--text-3)' : v > 100 ? '#DC2626' : v > 50 ? '#D97706' : '#059669';
+
+    const rows = mapeData.length > 0 ? mapeData : periodGroups.map(pg => ({
+      period: pg.period, model: modelLabel || 'Forecast',
+    mapeAll: null, mapeHV: null,
+    itemsPredicted: pg.data.length,
+    itemsDeliver: pg.data.filter(d => d.predictedAction === 'Deliver').length,
+    itemsReturn: pg.data.filter(d => d.predictedAction === 'Return').length,
+    tier: '—',
+  }));
+
   return (
     <div>
-      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 10 }}>MAPE values from the workbook (N/A rows = future mode, no actuals).</div>
+      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 10 }}>
+        Model accuracy summary from MAPE_Summary sheet. Lower MAPE = better accuracy.
+      </div>
       <div style={{ borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr><th style={thS}>Period</th><th style={thS}>Model</th><th style={thS}>MAPE All (%)</th><th style={thS}>MAPE HV (%)</th><th style={{ ...thS, textAlign: 'right' }}>Predicted</th><th style={{ ...thS, textAlign: 'right' }}>Deliver</th><th style={{ ...thS, textAlign: 'right' }}>Return</th><th style={thS}>Tier</th></tr></thead>
+          <thead>
+            <tr>
+              <th style={thS}>Period</th>
+              <th style={thS}>Model</th>
+              <th style={{ ...thS, textAlign: 'right' }}>MAPE All (%)</th>
+              <th style={{ ...thS, textAlign: 'right' }}>MAPE HV (%)</th>
+              <th style={{ ...thS, textAlign: 'right' }}>Predicted</th>
+              <th style={{ ...thS, textAlign: 'right' }}>Deliver</th>
+              <th style={{ ...thS, textAlign: 'right' }}>Return</th>
+              <th style={thS}>Tier</th>
+            </tr>
+          </thead>
           <tbody>
-            {periodGroups.map(pg => (
-              <tr key={pg.period}>
-                <td style={{ ...tdS, fontFamily: 'var(--mono)', fontWeight: 600, fontSize: 12 }}>{pg.period}</td>
-                <td style={tdS}>Monthly</td><td style={{ ...tdS, color: 'var(--text-3)' }}>N/A</td><td style={{ ...tdS, color: 'var(--text-3)' }}>N/A</td>
-                <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600 }}>{pg.data.length}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600, color: '#059669' }}>{pg.data.filter(d => d.predictedAction === 'Deliver').length}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600, color: '#DC2626' }}>{pg.data.filter(d => d.predictedAction === 'Return').length}</td>
-                <td style={tdS}>Inactive</td>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td style={{ ...tdS, fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 12 }}>{r.period}</td>
+                <td style={{ ...tdS, fontWeight: 500 }}>{r.model}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: mapeColor(r.mapeAll) }}>
+                  {r.mapeAll != null ? r.mapeAll.toFixed(1) + '%' : '—'}
+                </td>
+                <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: mapeColor(r.mapeHV) }}>
+                  {r.mapeHV != null ? r.mapeHV.toFixed(1) + '%' : '—'}
+                </td>
+                <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600 }}>{r.itemsPredicted ?? '—'}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600, color: '#059669' }}>{r.itemsDeliver ?? '—'}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600, color: '#DC2626' }}>{r.itemsReturn ?? '—'}</td>
+                <td style={tdS}>{r.tier}</td>
               </tr>
             ))}
           </tbody>
@@ -315,53 +309,353 @@ function ModelAccuracyTable({ periodGroups }) {
   );
 }
 
-/* ===== EXPLORER-SPECIFIC: Filtered Stats Mini Charts ===== */
-function FilteredActionBreakdown({ data }) {
-  const actions = ['Deliver', 'Return', 'No Change'];
-  const colors = { Deliver: '#059669', Return: '#DC2626', 'No Change': '#D97706' };
-  const total = data.length || 1;
+/* ===== ITEM FORECAST CARD — actual vs predicted bars per period (like PDF charts) ===== */
+/* Colors matching the PDF reference */
+const ACT_COL = '#1E40AF';   /* dark navy  — Actual Closing Balance  */
+const PRED_COL = '#F97316';  /* orange     — Predicted Closing Balance */
+const MAPE_GREEN = '#16A34A', MAPE_AMBER = '#D97706', MAPE_RED = '#DC2626';
+const mapeColor = v => v == null ? 'var(--text-3)' : v < 30 ? MAPE_GREEN : v <= 100 ? MAPE_AMBER : MAPE_RED;
+
+function ItemForecastCard({ item }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const { periods } = item;
+
+  const fmtMon = p => { const m = p.split('-')[1]; const ns = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return ns[parseInt(m)] || p; };
+  const fmtK  = v => v == null ? '—' : v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : Math.round(v).toString();
+  const fmtY  = v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? Math.round(v/1e3)+'K' : Math.round(v);
+
+  const hasActuals = periods.some(p => p.actualClosingBal != null);
+  const hasDir     = periods.some(p => p.directionCorrect != null);
+  const maxVal = Math.max(...periods.flatMap(p => [p.predictedClosingBal || 0, p.actualClosingBal || 0]), 1);
+  const years  = [...new Set(periods.map(p => p.period.split('-')[0]))];
+  const multiYear = years.length > 1;
+  const nMape = periods.filter(p => p.itemMape != null).length;
+
+  function renderChart(opts = {}) {
+    const barW  = opts.barW  || 28;
+    const barGap = 3;
+    const groupGap = opts.groupGap || 18;
+    const cH   = opts.cH   || 200;
+    const padL = opts.padL || 60;
+    const padT = opts.padT || 26;
+    const padB = opts.padB || (multiYear ? (hasDir ? 60 : 48) : (hasDir ? 52 : 40));
+    const fs   = opts.fs   || 10;
+    const groupW = (hasActuals ? barW * 2 + barGap : barW) + groupGap;
+    const chartW = padL + periods.length * groupW + 16;
+    const svgH  = padT + cH + padB;
+
+    return (
+      <div style={{ overflowX: 'auto', overflowY: 'visible' }}>
+        <svg width={chartW} height={svgH} viewBox={`0 0 ${chartW} ${svgH}`} style={{ display: 'block' }}>
+          {/* Rotated Y-axis label */}
+          <text x={10} y={padT + cH / 2} textAnchor="middle" fontSize={fs - 2} fill="var(--text-3)"
+            transform={`rotate(-90, 10, ${padT + cH / 2})`} fontFamily="var(--mono)">Units (closing balance)</text>
+          {/* Y axis line */}
+          <line x1={padL} y1={padT - 4} x2={padL} y2={padT + cH} stroke="#D1D5DB" strokeWidth={1} />
+          {/* Y grid lines + labels */}
+          {[0, 0.25, 0.5, 0.75, 1].map((t, i) => {
+            const yy = padT + cH - cH * t;
+            return (
+              <g key={i}>
+                <line x1={padL} y1={yy} x2={chartW - 6} y2={yy} stroke={t === 0 ? '#D1D5DB' : '#F0F1F3'} strokeWidth={t === 0 ? 1 : 0.8} />
+                <text x={padL - 5} y={yy + 3.5} textAnchor="end" fontSize={fs - 1} fill="var(--text-3)" fontFamily="var(--mono)">{fmtY(maxVal * t)}</text>
+              </g>
+            );
+          })}
+
+          {/* Bars per period */}
+          {periods.map((p, i) => {
+            const gx  = padL + i * groupW;
+            const actH  = p.actualClosingBal != null ? Math.max((p.actualClosingBal / maxVal) * cH, 2) : 0;
+            const predH = Math.max(((p.predictedClosingBal || 0) / maxVal) * cH, 2);
+            const mape  = p.itemMape;
+            const isNewYear = multiYear && (i === 0 || p.period.split('-')[0] !== periods[i-1].period.split('-')[0]);
+            /* center of group for MAPE label & X label */
+            const groupCx = hasActuals ? gx + barW + barGap / 2 : gx + barW / 2;
+            /* label the taller bar */
+            const topY = padT + cH - Math.max(predH, actH > 0 ? actH : predH);
+            const yr = p.period.split('-')[0];
+
+            return (
+              <g key={p.period}>
+                {/* Year separator */}
+                {isNewYear && i > 0 && <line x1={gx - groupGap / 2} y1={padT} x2={gx - groupGap / 2} y2={padT + cH + 1} stroke="#E5E7EB" strokeWidth={1} strokeDasharray="4 3" />}
+
+                {/* Actual bar (left, dark navy) */}
+                {actH > 0 && (
+                  <g>
+                    <rect x={gx} y={padT + cH - actH} width={barW} height={actH} rx={2} fill={ACT_COL} opacity={0.88} />
+                    {actH > 22 && <text x={gx + barW / 2} y={padT + cH - 4} textAnchor="middle" fontSize={fs - 2} fill="#fff" fontWeight="700" fontFamily="var(--mono)">{fmtK(p.actualClosingBal)}</text>}
+                  </g>
+                )}
+
+                {/* Predicted bar (right if actuals exist, center otherwise — orange) */}
+                {(() => {
+                  const px = hasActuals ? gx + barW + barGap : gx;
+                  return (
+                    <g>
+                      <rect x={px} y={padT + cH - predH} width={barW} height={predH} rx={2} fill={PRED_COL} opacity={0.88} />
+                      {predH > 22 && <text x={px + barW / 2} y={padT + cH - 4} textAnchor="middle" fontSize={fs - 2} fill="#fff" fontWeight="700" fontFamily="var(--mono)">{fmtK(p.predictedClosingBal)}</text>}
+                    </g>
+                  );
+                })()}
+
+                {/* MAPE% above tallest bar */}
+                {mape != null && (
+                  <text x={groupCx} y={topY - 5} textAnchor="middle" fontSize={fs - 1} fontWeight="800"
+                    fill={mapeColor(mape)} fontFamily="var(--mono)">{mape.toFixed(0)}%</text>
+                )}
+
+                {/* X axis — month label */}
+                <text x={groupCx} y={padT + cH + 14} textAnchor="middle" fontSize={fs} fontWeight="600" fill="var(--text-2)" fontFamily="var(--mono)">{fmtMon(p.period)}</text>
+                {/* X axis — year (on boundary) */}
+                {multiYear && <text x={groupCx} y={padT + cH + 26} textAnchor="middle" fontSize={fs - 1}
+                  fill={isNewYear ? 'var(--text-3)' : 'transparent'} fontFamily="var(--mono)">{isNewYear ? yr : ''}</text>}
+
+                {/* Direction indicator ✓ / ✗ */}
+                {p.directionCorrect != null && (
+                  <text x={groupCx} y={padT + cH + (multiYear ? 40 : 30)} textAnchor="middle"
+                    fontSize={fs} fontWeight="700"
+                    fill={p.directionCorrect ? MAPE_GREEN : MAPE_RED}
+                    fontFamily="var(--font)">{p.directionCorrect ? '✓' : '✗'}</text>
+                )}
+              </g>
+            );
+          })}
+
+          {/* X axis label */}
+          <text x={padL + (periods.length * groupW) / 2} y={svgH - 2} textAnchor="middle" fontSize={fs - 1} fill="var(--text-3)" fontFamily="var(--mono)">Month</text>
+        </svg>
+      </div>
+    );
+  }
+
+  /* Legend matching PDF exactly */
+  function Legend({ fs = 10 }) {
+    const items = [
+      { col: ACT_COL, label: 'Actual Closing Balance', show: hasActuals },
+      { col: PRED_COL, label: 'Predicted Closing Balance', show: true },
+      { col: MAPE_GREEN, label: 'MAPE < 30% — reliable', text: true, show: true },
+      { col: MAPE_AMBER, label: 'MAPE 30–100% — directional', text: true, show: true },
+      { col: MAPE_RED,   label: 'MAPE > 100% — unreliable', text: true, show: true },
+      { sym: '✗', col: MAPE_RED,   label: 'Direction wrong', show: hasDir },
+      { sym: '✓', col: MAPE_GREEN, label: 'Direction correct', show: hasDir },
+    ].filter(x => x.show);
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: 10 }}>
+        {items.map((it, i) => (
+          <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: fs, color: 'var(--text-3)' }}>
+            {it.sym
+              ? <span style={{ fontSize: fs + 1, fontWeight: 700, color: it.col }}>{it.sym}</span>
+              : <span style={{ width: fs, height: fs, borderRadius: 2, background: it.col, opacity: .9, display: 'inline-block', flexShrink: 0 }}></span>}
+            {it.label}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  const avgMapeLabel = item.avgMape != null
+    ? `Avg MAPE (÷ ${nMape}): ${item.avgMape.toFixed(1)}%`
+    : null;
+  const avgMapeCol = mapeColor(item.avgMape);
+
   return (
-    <div style={{ display: 'flex', gap: 8 }}>
-      {actions.map(a => {
-        const c = data.filter(d => d.predictedAction === a).length;
-        const pct = c / total;
-        return (
-          <div key={a} style={{ flex: 1, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <span style={{ fontSize: 10, fontWeight: 600, color: colors[a], textTransform: 'uppercase', letterSpacing: '.04em' }}>{a}</span>
-              <span style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>{Math.round(pct * 100)}%</span>
-            </div>
-            <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'var(--mono)', marginBottom: 6 }}>{c}</div>
-            <div style={{ height: 5, borderRadius: 3, background: '#F3F4F6', overflow: 'hidden' }}>
-              <div style={{ height: '100%', borderRadius: 3, width: `${pct * 100}%`, background: colors[a], transition: 'width .3s' }}></div>
-            </div>
+    <>
+      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' }}>
+        {/* Card header */}
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+            <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text-3)', fontWeight: 600 }}>{item.code}</span>
+            {item.isHV && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-surface)', padding: '2px 7px', borderRadius: 4, letterSpacing: '.02em' }}>HV</span>}
+            <button onClick={() => setExpanded(true)} title="Expand chart" style={{ marginLeft: 'auto', flexShrink: 0, padding: '3px 6px', background: 'none', border: '1px solid var(--border)', borderRadius: 5, cursor: 'pointer', color: 'var(--text-3)', display: 'flex', alignItems: 'center' }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+            </button>
           </div>
-        );
-      })}
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', lineHeight: 1.3 }}>{item.desc}</div>
+          {avgMapeLabel && <div style={{ fontSize: 11, fontWeight: 600, color: avgMapeCol, marginTop: 3 }}>{avgMapeLabel}</div>}
+        </div>
+        {renderChart({})}
+      </div>
+
+      {/* Expanded modal */}
+      {expanded && ReactDOM.createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={() => setExpanded(false)}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: '22px 26px', maxWidth: '92vw', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 24px 72px rgba(0,0,0,.28)', minWidth: 520 }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+              <span style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--text-3)', fontWeight: 600 }}>{item.code}</span>
+              {item.isHV && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-surface)', padding: '2px 7px', borderRadius: 4 }}>HV</span>}
+              <button onClick={() => setExpanded(false)} style={{ marginLeft: 'auto', padding: '4px 12px', background: 'none', border: '1px solid var(--border)', borderRadius: 7, cursor: 'pointer', fontSize: 12, color: 'var(--text-2)', fontFamily: 'var(--font)' }}>✕ Close</button>
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 4, lineHeight: 1.3 }}>{item.desc}</div>
+            {avgMapeLabel && <div style={{ fontSize: 12, fontWeight: 600, color: avgMapeCol, marginBottom: 14 }}>{avgMapeLabel}</div>}
+            {renderChart({ barW: 44, groupGap: 28, cH: 320, padL: 72, padT: 32, padB: multiYear ? 64 : 54, fs: 12 })}
+            <Legend fs={11} />
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
+/* ===== ITEM FORECASTS GRID — scrollable 2-column grid of forecast charts ===== */
+function ItemForecastsGrid({ allData }) {
+  const [search, setSearch] = React.useState('');
+  const [hvOnly, setHvOnly] = React.useState(false);
+  const [showSuggestions, setShowSuggestions] = React.useState(false);
+  const [activeSuggestion, setActiveSuggestion] = React.useState(-1);
+  const searchRef = React.useRef(null);
+
+  const items = React.useMemo(() => {
+    const byItem = {};
+    allData.forEach(d => {
+      if (!byItem[d.itemCode]) byItem[d.itemCode] = { code: d.itemCode, desc: d.description, isHV: d.isHV, periods: [] };
+      byItem[d.itemCode].periods.push(d);
+    });
+    return Object.values(byItem).map(it => {
+      it.periods.sort((a, b) => a.period.localeCompare(b.period));
+      const mapes = it.periods.map(p => p.itemMape).filter(m => m != null);
+      it.avgMape = mapes.length ? mapes.reduce((s, m) => s + m, 0) / mapes.length : null;
+      return it;
+    }).sort((a, b) => {
+      if (a.isHV !== b.isHV) return a.isHV ? -1 : 1;
+      return (a.avgMape ?? Infinity) - (b.avgMape ?? Infinity);
+    });
+  }, [allData]);
+
+  const filtered = React.useMemo(() => {
+    let rows = items;
+    if (hvOnly) rows = rows.filter(it => it.isHV);
+    if (search) {
+      const s = search.toLowerCase();
+      rows = rows.filter(it => (it.desc || '').toLowerCase().includes(s) || (it.code || '').toLowerCase().includes(s));
+    }
+    return rows;
+  }, [items, hvOnly, search]);
+
+  const suggestions = React.useMemo(() => {
+    if (!search || search.length < 1) return [];
+    const s = search.toLowerCase();
+    return items
+      .filter(it => it.desc.toLowerCase().includes(s) || it.code.toLowerCase().includes(s))
+      .slice(0, 8)
+      .map(it => ({ label: it.desc, sub: it.code, isHV: it.isHV }));
+  }, [items, search]);
+
+  const handleSearchKeyDown = (e) => {
+    if (!showSuggestions || suggestions.length === 0) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveSuggestion(i => Math.min(i + 1, suggestions.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveSuggestion(i => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter' && activeSuggestion >= 0) { e.preventDefault(); setSearch(suggestions[activeSuggestion].label); setShowSuggestions(false); setActiveSuggestion(-1); }
+    else if (e.key === 'Escape') { setShowSuggestions(false); setActiveSuggestion(-1); }
+  };
+
+  // Close suggestions on outside click
+  React.useEffect(() => {
+    const handler = (e) => { if (searchRef.current && !searchRef.current.contains(e.target)) setShowSuggestions(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const hvCount = items.filter(i => i.isHV).length;
+  const hasAnyActuals = items.some(it => it.periods.some(p => p.actualClosingBal != null));
+  const hasAnyDir     = items.some(it => it.periods.some(p => p.directionCorrect != null));
+
+  /* Global legend items — same as PDF page header */
+  const globalLegendItems = [
+    { col: ACT_COL,    label: 'Actual Closing Balance',    show: hasAnyActuals },
+    { col: PRED_COL,   label: 'Predicted Closing Balance', show: true },
+    { col: MAPE_GREEN, label: 'MAPE < 30% — reliable',     show: true },
+    { col: MAPE_AMBER, label: 'MAPE 30–100% — directional',show: true },
+    { col: MAPE_RED,   label: 'MAPE > 100% — unreliable',  show: true },
+    { sym: '✗', col: MAPE_RED,   label: 'Direction wrong',   show: hasAnyDir },
+    { sym: '✓', col: MAPE_GREEN, label: 'Direction correct', show: hasAnyDir },
+  ].filter(x => x.show);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+
+      {/* Global legend + formula bar — matches PDF page header */}
+      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', marginBottom: 10, flexShrink: 0 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', marginBottom: 6 }}>
+          {globalLegendItems.map((it, i) => (
+            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-2)' }}>
+              {it.sym
+                ? <span style={{ fontSize: 13, fontWeight: 800, color: it.col, lineHeight: 1 }}>{it.sym}</span>
+                : <span style={{ width: 11, height: 11, borderRadius: 2, background: it.col, opacity: .9, display: 'inline-block', flexShrink: 0 }}></span>}
+              {it.label}
+            </span>
+          ))}
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--mono)', borderTop: '1px solid #F3F4F6', paddingTop: 6 }}>
+          MAPE = |Actual − Predicted| ÷ Actual × 100 &nbsp;·&nbsp; Avg MAPE = Σ(period MAPE) ÷ n &nbsp;·&nbsp; ✓/✗ = direction of balance change predicted correctly
+        </div>
+      </div>
+
+      {/* Controls — search + filter + count */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10, flexShrink: 0, flexWrap: 'wrap' }}>
+        <div ref={searchRef} style={{ position: 'relative', flex: '0 0 300px' }}>
+          <input
+            value={search}
+            onChange={e => { setSearch(e.target.value); setShowSuggestions(true); setActiveSuggestion(-1); }}
+            onFocus={e => { e.target.style.borderColor = 'var(--accent)'; setShowSuggestions(true); }}
+            onBlur={e => e.target.style.borderColor = 'var(--border)'}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search items…"
+            autoComplete="off"
+            style={{ width: '100%', padding: '7px 30px 7px 32px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, fontFamily: 'var(--font)', color: 'var(--text)', outline: 'none', background: '#fff', boxSizing: 'border-box' }}
+          />
+          <svg style={{ position: 'absolute', left: 10, top: 9, pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          {search && (
+            <button onClick={() => { setSearch(''); setShowSuggestions(false); }} style={{ position: 'absolute', right: 8, top: 7, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>×</button>
+          )}
+          {showSuggestions && suggestions.length > 0 && (
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.10)', zIndex: 50, overflow: 'hidden' }}>
+              {suggestions.map((s, i) => (
+                <div key={i}
+                  onMouseDown={() => { setSearch(s.label); setShowSuggestions(false); setActiveSuggestion(-1); }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer', background: activeSuggestion === i ? 'var(--accent-surface, #EEF2FF)' : '#fff', borderBottom: i < suggestions.length - 1 ? '1px solid #F3F4F6' : 'none' }}>
+                  {s.isHV && <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>★</span>}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>{s.sub}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600,
+          color: hvOnly ? 'var(--accent)' : 'var(--text-2)', cursor: 'pointer', userSelect: 'none',
+          padding: '5px 10px', border: '1px solid', borderColor: hvOnly ? 'var(--accent)' : 'var(--border)',
+          borderRadius: 6, background: hvOnly ? 'var(--accent-surface)' : '#fff' }}>
+          <input type="checkbox" checked={hvOnly} onChange={e => setHvOnly(e.target.checked)} style={{ accentColor: 'var(--accent)', margin: 0 }} />
+          HV Only ({hvCount})
+        </label>
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>
+          {filtered.length} of {items.length} items
+        </span>
+      </div>
+
+      {/* Scrollable grid — no pagination */}
+      <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+        {filtered.length === 0 ? (
+          <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
+            No items found{search ? ` for "${search}"` : ''}
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, paddingBottom: 16 }}>
+            {filtered.map(it => <ItemForecastCard key={it.code} item={it} />)}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-function FilteredQuantityDistribution({ data }) {
-  const sorted = [...data].sort((a, b) => (b.quantity || 0) - (a.quantity || 0)).slice(0, 8);
-  const max = sorted.length ? sorted[0].quantity || 1 : 1;
-  const ac = (a) => a === 'Deliver' ? '#059669' : a === 'Return' ? '#DC2626' : '#D97706';
-  if (!sorted.length) return null;
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4 }}>Top items in current selection by quantity</div>
-      {sorted.map((item, i) => (
-        <div key={item.itemCode + item.period + i} style={{ display: 'flex', alignItems: 'center', gap: 0, height: 24 }}>
-          <div style={{ width: 120, fontSize: 11, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8, textAlign: 'right', flexShrink: 0 }} title={item.description}>{item.description}</div>
-          <div style={{ flex: 1, height: 16, borderRadius: 4, background: '#F3F4F6', overflow: 'hidden' }}>
-            <div style={{ height: '100%', borderRadius: 4, width: `${(item.quantity || 0) / max * 100}%`, background: ac(item.predictedAction) }}></div>
-          </div>
-          <div style={{ width: 50, fontSize: 11, fontFamily: 'var(--mono)', textAlign: 'right', fontWeight: 600, paddingLeft: 6, flexShrink: 0 }}>{Math.round(item.quantity || 0).toLocaleString()}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 /* ===== ACTION COUNT BARS — grouped bars across all periods ===== */
 function ActionCountBars({ periodGroups }) {
@@ -374,8 +668,8 @@ function ActionCountBars({ periodGroups }) {
   const max = Math.max(...data.flatMap(d => d.counts), 1);
   const fmt = p => { const [y, m] = p.split('-'); const names = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[parseInt(m)]} ${y.slice(-2)}`; };
   const periodCount = data.length;
-  const groupW = Math.max(140, Math.min(220, 720 / Math.max(periodCount, 1)));
-  const gapBetween = 28;
+  const groupW = 96;
+  const gapBetween = 24;
   const barW = (groupW - 12) / 3;
   const cH = 240, pL = 56, pT = 18, pB = 44;
   const tW = pL + periodCount * (groupW + gapBetween) + 16;
@@ -385,7 +679,8 @@ function ActionCountBars({ periodGroups }) {
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>Item count per action across {periodCount} period{periodCount === 1 ? '' : 's'}.</div>
-      <svg width="100%" height={sH} viewBox={`0 0 ${tW} ${sH}`} style={{ overflow: 'visible' }}>
+      <div style={{ overflowX: 'auto' }}>
+      <svg width={tW} height={sH} viewBox={`0 0 ${tW} ${sH}`} style={{ display: 'block' }}>
         {[0,.25,.5,.75,1].map((p,i) => { const y = pT + cH - cH * p; return <g key={i}><line x1={pL} y1={y} x2={tW-12} y2={y} stroke="#F3F4F6"/><text x={pL-8} y={y+3.5} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(max*p)}</text></g>; })}
         {data.map((row, gi) => {
           const x0 = pL + 6 + gi * (groupW + gapBetween);
@@ -408,6 +703,7 @@ function ActionCountBars({ periodGroups }) {
           );
         })}
       </svg>
+      </div>
       <div style={{ display: 'flex', gap: 14, justifyContent: 'center', marginTop: 6 }}>
         {actions.map(a => <div key={a} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-2)' }}><div style={{ width: 10, height: 10, borderRadius: 3, background: colors[a], opacity: .85 }}></div>{a}</div>)}
       </div>
@@ -425,7 +721,7 @@ function HighVelocityItems({ allData, periodGroups }) {
     byItem[d.itemCode].totalQty += d.quantity || 0;
     byItem[d.itemCode].periods += 1;
     if (d.predictedAction === 'Deliver') byItem[d.itemCode].deliverQty += d.quantity || 0;
-    if (d.predictedAction === 'Return') byItem[d.itemCode].returnQty += d.quantity || 0;
+    else if (d.predictedAction === 'Return') byItem[d.itemCode].returnQty += d.quantity || 0;
   });
   const items = Object.values(byItem).sort((a, b) => b.totalQty - a.totalQty).slice(0, 12);
   if (!items.length) return <div style={{ padding: 24, color: 'var(--text-3)', fontSize: 13, textAlign: 'center' }}>No items with movement</div>;
@@ -438,22 +734,39 @@ function HighVelocityItems({ allData, periodGroups }) {
       <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 12 }}>Top items by cumulative movement quantity across all periods. Bar split shows deliver vs return contribution.</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {items.map((it, i) => {
-          const delPct = (it.deliverQty / it.totalQty) * 100;
-          const retPct = (it.returnQty / it.totalQty) * 100;
+          const moveable = it.deliverQty + it.returnQty || 1;
+          const delPct = (it.deliverQty / moveable) * 100;
+          const retPct = (it.returnQty / moveable) * 100;
           const totalPct = (it.totalQty / maxTotal) * 100;
           return (
             <div key={it.code} onMouseEnter={() => setH(i)} onMouseLeave={() => setH(null)}
-              style={{ display: 'grid', gridTemplateColumns: '180px 1fr 80px', alignItems: 'center', gap: 12, height: 26, opacity: h != null && h !== i ? .65 : 1, transition: 'opacity .12s', cursor: 'default' }}
-              title={`${it.desc} · ${it.periods} period${it.periods === 1 ? '' : 's'}`}>
-              <div style={{ fontSize: 11, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
-                {it.isHV && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-surface)', padding: '1px 5px', borderRadius: 4 }}>HV</span>}
-                <span>{it.desc}</span>
+              style={{ display: 'grid', gridTemplateColumns: '180px 1fr 96px', alignItems: 'center', gap: 12, minHeight: 28, opacity: h != null && h !== i ? .65 : 1, transition: 'opacity .12s', cursor: 'default' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5 }}>
+                {it.isHV && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-surface)', padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>HV</span>}
+                <span title={`${it.desc} · ${it.periods} period${it.periods === 1 ? '' : 's'}`}>{it.desc}</span>
               </div>
-              <div style={{ display: 'flex', height: 16, borderRadius: 4, background: '#F3F4F6', overflow: 'hidden', position: 'relative', width: `${totalPct}%` }}>
-                <div style={{ width: `${(it.deliverQty / it.totalQty) * 100}%`, background: '#059669', opacity: .85 }}></div>
-                <div style={{ width: `${(it.returnQty / it.totalQty) * 100}%`, background: '#DC2626', opacity: .85 }}></div>
+              {/* Bar: deliver (green) + return (red), with % labels inside segments */}
+              <div style={{ display: 'flex', height: 22, borderRadius: 5, background: '#F3F4F6', overflow: 'hidden', width: `${totalPct}%`, minWidth: 40 }}>
+                {delPct > 0 && (
+                  <div style={{ width: `${delPct}%`, background: '#059669', opacity: .88, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                    {delPct >= 14 && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>{Math.round(delPct)}%</span>}
+                  </div>
+                )}
+                {retPct > 0 && (
+                  <div style={{ width: `${retPct}%`, background: '#DC2626', opacity: .88, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                    {retPct >= 14 && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>{Math.round(retPct)}%</span>}
+                  </div>
+                )}
               </div>
-              <div style={{ fontSize: 11, fontFamily: 'var(--mono)', textAlign: 'right', fontWeight: 700, color: 'var(--text)' }}>{fmtK(it.totalQty)}</div>
+              {/* Total qty + split summary */}
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 12, fontFamily: 'var(--mono)', fontWeight: 800, color: 'var(--text)' }}>{fmtK(it.totalQty)}</div>
+                <div style={{ fontSize: 9, fontFamily: 'var(--mono)', color: 'var(--text-3)', marginTop: 1 }}>
+                  <span style={{ color: '#059669' }}>D {Math.round(delPct)}%</span>
+                  {' · '}
+                  <span style={{ color: '#DC2626' }}>R {Math.round(retPct)}%</span>
+                </div>
+              </div>
             </div>
           );
         })}
@@ -482,8 +795,8 @@ function HVMovementByPeriod({ periodGroups }) {
   });
   const max = Math.max(...data.flatMap(d => [d.hvDel + d.stdDel, d.hvRet + d.stdRet]), 1);
   const periodCount = data.length;
-  const groupW = Math.max(120, Math.min(180, 640 / Math.max(periodCount, 1)));
-  const gapBetween = 24;
+  const groupW = 80;
+  const gapBetween = 20;
   const barW = (groupW - 8) / 2;
   const cH = 200, pL = 56, pT = 14, pB = 44;
   const tW = pL + periodCount * (groupW + gapBetween) + 16;
@@ -492,7 +805,8 @@ function HVMovementByPeriod({ periodGroups }) {
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>Deliver and Return counts per period, stacked by HV (dark) vs Standard (light).</div>
-      <svg width="100%" height={sH} viewBox={`0 0 ${tW} ${sH}`} style={{ overflow: 'visible' }}>
+      <div style={{ overflowX: 'auto' }}>
+      <svg width={tW} height={sH} viewBox={`0 0 ${tW} ${sH}`} style={{ display: 'block' }}>
         {[0,.25,.5,.75,1].map((p,i) => { const y = pT + cH - cH * p; return <g key={i}><line x1={pL} y1={y} x2={tW-12} y2={y} stroke="#F3F4F6"/><text x={pL-8} y={y+3.5} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(max*p)}</text></g>; })}
         {data.map((row, gi) => {
           const x0 = pL + 6 + gi * (groupW + gapBetween);
@@ -519,84 +833,18 @@ function HVMovementByPeriod({ periodGroups }) {
               <rect x={xRet} y={pT + cH - retHvH} width={barW} height={retHvH} fill="#B91C1C" opacity={.95} />
               {retTotal > 0 && retH > 14 && <text x={xRet + barW/2} y={pT + cH - retH - 4} textAnchor="middle" fontSize="10" fontWeight="700" fill="#B91C1C" fontFamily="var(--mono)">{retTotal}</text>}
               <text x={x0 + (groupW - 8)/2} y={pT + cH + 18} textAnchor="middle" fontSize="11" fill="var(--text-2)" fontWeight="500" fontFamily="var(--mono)">{fmt(row.period)}</text>
-              <text x={xDel + barW/2} y={pT + cH + 32} textAnchor="middle" fontSize="9" fill="#059669">Del</text>
-              <text x={xRet + barW/2} y={pT + cH + 32} textAnchor="middle" fontSize="9" fill="#DC2626">Ret</text>
+              <text x={xDel + barW/2} y={pT + cH + 32} textAnchor="middle" fontSize="10" fill="#059669">Del</text>
+              <text x={xRet + barW/2} y={pT + cH + 32} textAnchor="middle" fontSize="10" fill="#DC2626">Ret</text>
             </g>
           );
         })}
       </svg>
+      </div>
       <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 4, fontSize: 11, color: 'var(--text-2)' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 10, height: 10, borderRadius: 3, background: '#047857' }}></span>Deliver · HV</span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 10, height: 10, borderRadius: 3, background: '#34D399' }}></span>Deliver · Standard</span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 10, height: 10, borderRadius: 3, background: '#B91C1C' }}></span>Return · HV</span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 10, height: 10, borderRadius: 3, background: '#FCA5A5' }}></span>Return · Standard</span>
-      </div>
-    </div>
-  );
-}
-
-/* ===== SIGNED DIFFERENCE HISTOGRAM (butterfly) ===== */
-function DifferenceHistogram({ data }) {
-  // Buckets by absolute magnitude; counts are split into Return (negative) and Deliver (positive)
-  const buckets = [
-    { label: '0–10', min: 0, max: 10 },
-    { label: '10–50', min: 10, max: 50 },
-    { label: '50–100', min: 50, max: 100 },
-    { label: '100–500', min: 100, max: 500 },
-    { label: '500–1K', min: 500, max: 1000 },
-    { label: '1K–5K', min: 1000, max: 5000 },
-    { label: '5K+', min: 5000, max: Infinity },
-  ];
-  const buckets_data = buckets.map(b => {
-    let ret = 0, del = 0;
-    data.forEach(d => {
-      const diff = d.difference;
-      if (diff == null) return;
-      const mag = Math.abs(diff);
-      if (mag <= b.min || mag > b.max) return;
-      if (diff < 0) ret++;
-      else if (diff > 0) del++;
-    });
-    return { label: b.label, ret, del };
-  });
-  const max = Math.max(...buckets_data.flatMap(b => [b.ret, b.del]), 1);
-  const noChangeCount = data.filter(d => d.predictedAction === 'No Change').length;
-  const totalDel = data.filter(d => d.predictedAction === 'Deliver').length;
-  const totalRet = data.filter(d => d.predictedAction === 'Return').length;
-  const bW = 44, cH = 200, pL = 56, pT = 14, pB = 38, gap = 16;
-  const tW = pL + buckets.length * (bW + gap) + 24;
-  const sH = pT + cH + pB;
-  const [hb, setHb] = React.useState(null);
-
-  return (
-    <div>
-      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>Items grouped by magnitude of change. <span style={{ color: '#059669', fontWeight: 600 }}>{totalDel}</span> deliver / <span style={{ color: '#DC2626', fontWeight: 600 }}>{totalRet}</span> return / <span style={{ color: '#D97706', fontWeight: 600 }}>{noChangeCount}</span> hold.</div>
-      <svg width="100%" height={sH} viewBox={`0 0 ${tW} ${sH}`} style={{ overflow: 'visible' }}>
-        {[0,.25,.5,.75,1].map((p,i) => { const y=pT+cH-cH*p; return <g key={i}><line x1={pL} y1={y} x2={tW-12} y2={y} stroke="#F3F4F6"/>{p>0&&<text x={pL-6} y={y+3.5} textAnchor="end" fontSize="9" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(max*p)}</text>}</g>; })}
-        {buckets_data.map((b, i) => {
-          const cx = pL + 4 + i * (bW + gap);
-          const dh = (b.del / max) * cH;
-          const rh = (b.ret / max) * cH;
-          const dim = hb != null && hb !== i;
-          const halfW = bW / 2 - 1;
-          return (
-            <g key={i} style={{ opacity: dim ? .65 : 1, transition: 'opacity .15s', cursor: 'pointer' }}
-              onMouseEnter={() => setHb(i)} onMouseLeave={() => setHb(null)}>
-              {/* Deliver bar (left half) */}
-              <rect x={cx} y={pT + cH - dh} width={halfW} height={dh} rx={3} fill="#059669" opacity={.85} />
-              {b.del > 0 && dh > 14 && <text x={cx + halfW/2} y={pT + cH - dh - 3} textAnchor="middle" fontSize="9" fontWeight="700" fill="#059669" fontFamily="var(--mono)">{b.del}</text>}
-              {/* Return bar (right half) */}
-              <rect x={cx + halfW + 2} y={pT + cH - rh} width={halfW} height={rh} rx={3} fill="#DC2626" opacity={.85} />
-              {b.ret > 0 && rh > 14 && <text x={cx + halfW + 2 + halfW/2} y={pT + cH - rh - 3} textAnchor="middle" fontSize="9" fontWeight="700" fill="#DC2626" fontFamily="var(--mono)">{b.ret}</text>}
-              <text x={cx + bW/2} y={pT + cH + 14} textAnchor="middle" fontSize="9" fill="var(--text-3)">{b.label}</text>
-            </g>
-          );
-        })}
-        <text x={tW / 2} y={pT + cH + 32} textAnchor="middle" fontSize="10" fill="var(--text-3)">Magnitude bucket · |Predicted − Previous|</text>
-      </svg>
-      <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 4 }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-2)' }}><span style={{ width: 10, height: 10, borderRadius: 3, background: '#059669', opacity: .85 }}></span>Deliver</span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-2)' }}><span style={{ width: 10, height: 10, borderRadius: 3, background: '#DC2626', opacity: .85 }}></span>Return</span>
       </div>
     </div>
   );
@@ -615,7 +863,7 @@ function ActionMagnitudeHeatmap({ data }) {
   ];
   const actions = ['Deliver', 'Return', 'No Change'];
   const colors = { Deliver: [5, 150, 105], Return: [220, 38, 38], 'No Change': [217, 119, 6] };
-  const matrix = actions.map(a => buckets.map(b => data.filter(d => d.predictedAction === a && (d.quantity || 0) > b.min && (d.quantity || 0) <= b.max).length));
+  const matrix = actions.map(a => buckets.map(b => data.filter(d => d.predictedAction === a && (d.quantity || 0) >= b.min && (d.quantity || 0) <= b.max).length));
   const maxCell = Math.max(...matrix.flat(), 1);
   const cellW = 78, cellH = 44, pL = 84, pT = 26;
   const tW = pL + buckets.length * cellW + 20;
@@ -657,4 +905,387 @@ function ActionMagnitudeHeatmap({ data }) {
   );
 }
 
-Object.assign(window, { ActionDonut, TopItemsBar, HVBreakdown, ClosingBalancePortfolio, ComparisonChart, QuantityHistogram, NetInventoryWaterfall, ActionFlowSankey, BalanceScatter, ModelAccuracyTable, FilteredActionBreakdown, FilteredQuantityDistribution, DifferenceHistogram, ActionMagnitudeHeatmap, ActionCountBars, HighVelocityItems, HVMovementByPeriod });
+/* ===== MAPE DISTRIBUTION HISTOGRAM ===== */
+function MapeDistributionChart({ allData }) {
+  const buckets = [
+    { label: '0–20%',   min: 0,   max: 20   },
+    { label: '20–50%',  min: 20,  max: 50   },
+    { label: '50–100%', min: 50,  max: 100  },
+    { label: '100–200%',min: 100, max: 200  },
+    { label: '200%+',   min: 200, max: Infinity },
+  ];
+  const colors = ['#059669', '#10B981', '#D97706', '#F97316', '#DC2626'];
+
+  // One row per item: use the avg of its itemMape values
+  const byItem = {};
+  allData.forEach(d => {
+    if (d.itemMape == null) return;
+    if (!byItem[d.itemCode]) byItem[d.itemCode] = { vals: [], isHV: d.isHV };
+    byItem[d.itemCode].vals.push(d.itemMape);
+  });
+  const items = Object.values(byItem).map(it => ({
+    avg: it.vals.reduce((s, v) => s + v, 0) / it.vals.length,
+    isHV: it.isHV,
+  }));
+
+  const counts = buckets.map(b => ({
+    ...b,
+    total: items.filter(it => it.avg >= b.min && it.avg < b.max).length,
+    hv: items.filter(it => it.isHV && it.avg >= b.min && it.avg < b.max).length,
+  }));
+
+  const max = Math.max(...counts.map(c => c.total), 1);
+  const total = items.length;
+  const wellPredicted = items.filter(it => it.avg < 50).length;
+  const pctWell = total ? Math.round(wellPredicted / total * 100) : 0;
+
+  const bW = 64, cH = 180, padL = 44, padT = 14, padB = 48, gap = 20;
+  const tW = padL + counts.length * (bW + gap) + 20;
+  const sH = padT + cH + padB;
+  const [hb, setHb] = React.useState(null);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 20, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+          Distribution of per-item average MAPE. <strong style={{ color: '#059669' }}>{pctWell}%</strong> of items have MAPE &lt; 50%.
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text-3)' }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--accent)', opacity: .75, display: 'inline-block' }}></span>HV
+          </span>
+        </div>
+      </div>
+      <svg width="100%" height={sH} viewBox={`0 0 ${tW} ${sH}`} style={{ overflow: 'visible' }}>
+        {[0, .25, .5, .75, 1].map((p, i) => {
+          const y = padT + cH - cH * p;
+          return <g key={i}><line x1={padL} y1={y} x2={tW - 10} y2={y} stroke="#F3F4F6" />{p > 0 && <text x={padL - 6} y={y + 3.5} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(max * p)}</text>}</g>;
+        })}
+        {counts.map((b, i) => {
+          const x = padL + 4 + i * (bW + gap);
+          const totalH = Math.max((b.total / max) * cH, b.total > 0 ? 3 : 0);
+          const hvH = Math.max((b.hv / max) * cH, b.hv > 0 ? 2 : 0);
+          const stdH = totalH - hvH;
+          const dim = hb != null && hb !== i;
+          return (
+            <g key={i} style={{ opacity: dim ? .55 : 1, transition: 'opacity .15s', cursor: 'pointer' }}
+              onMouseEnter={() => setHb(i)} onMouseLeave={() => setHb(null)}>
+              {/* Standard portion */}
+              {stdH > 0 && <rect x={x} y={padT + cH - totalH} width={bW} height={stdH} rx={0} fill={colors[i]} opacity={.45} />}
+              {/* HV portion on top */}
+              {hvH > 0 && <rect x={x} y={padT + cH - hvH} width={bW} height={hvH} rx={hvH === totalH ? 4 : 0} fill={colors[i]} opacity={.9} />}
+              {/* Round top of full bar */}
+              <rect x={x} y={padT + cH - totalH} width={bW} height={Math.min(4, totalH)} rx={4} fill={colors[i]} opacity={.9} />
+              {b.total > 0 && <text x={x + bW / 2} y={padT + cH - totalH - 5} textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--text)" fontFamily="var(--mono)">{b.total}</text>}
+              {/* Label */}
+              <text x={x + bW / 2} y={padT + cH + 16} textAnchor="middle" fontSize="10" fill="var(--text-2)" fontWeight="500">{b.label}</text>
+              {b.hv > 0 && <text x={x + bW / 2} y={padT + cH + 29} textAnchor="middle" fontSize="10" fill="var(--accent)" fontFamily="var(--mono)">{b.hv} HV</text>}
+            </g>
+          );
+        })}
+        <text x={tW / 2} y={padT + cH + 44} textAnchor="middle" fontSize="10" fill="var(--text-3)">Avg Item MAPE Bucket</text>
+      </svg>
+    </div>
+  );
+}
+
+/* ===== DIRECTION ACCURACY RING ===== */
+function DirectionAccuracyRing({ allData }) {
+  const withActuals = allData.filter(d => d.directionCorrect != null);
+  const correct = withActuals.filter(d => d.directionCorrect).length;
+  const total = withActuals.length;
+  const pct = total > 0 ? correct / total : 0;
+
+  // By action
+  const actions = ['Deliver', 'Return', 'No Change'];
+  const ac = (a) => a === 'Deliver' ? '#059669' : a === 'Return' ? '#DC2626' : '#D97706';
+  const byAction = actions.map(a => {
+    const sub = withActuals.filter(d => d.predictedAction === a);
+    const cor = sub.filter(d => d.directionCorrect).length;
+    return { action: a, total: sub.length, correct: cor, pct: sub.length ? cor / sub.length : 0 };
+  });
+
+  if (total === 0) return (
+    <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>No actual data available to compute direction accuracy.</div>
+  );
+
+  const r = 54, cx = 68, cy = 68, sw = 14, circ = 2 * Math.PI * r;
+  const len = pct * circ - 2;
+  const color = pct >= 0.8 ? '#059669' : pct >= 0.6 ? '#D97706' : '#DC2626';
+
+  return (
+    <div style={{ display: 'flex', gap: 32, alignItems: 'center', flexWrap: 'wrap' }}>
+      <svg width={136} height={136} viewBox="0 0 136 136" style={{ flexShrink: 0 }}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#F3F4F6" strokeWidth={sw} />
+        {pct > 0 && <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
+          strokeDasharray={`${len} ${circ - len}`} strokeDashoffset={0}
+          style={{ transform: 'rotate(-90deg)', transformOrigin: `${cx}px ${cy}px` }} />}
+        <text x={cx} y={cy - 2} textAnchor="middle" dominantBaseline="central" fill="var(--text)" fontSize="22" fontWeight="800" fontFamily="var(--mono)">{Math.round(pct * 100)}%</text>
+        <text x={cx} y={cy + 16} textAnchor="middle" fill="var(--text-3)" fontSize="10">correct</text>
+        <text x={cx} y={cy + 28} textAnchor="middle" fill="var(--text-3)" fontSize="10">{correct}/{total}</text>
+      </svg>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {byAction.filter(b => b.total > 0).map(b => (
+          <div key={b.action} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 9, height: 9, borderRadius: 2, background: ac(b.action), flexShrink: 0 }}></div>
+            <div style={{ fontSize: 11, color: 'var(--text-2)', fontWeight: 500, width: 72 }}>{b.action}</div>
+            <div style={{ width: 100, height: 6, background: '#F3F4F6', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ height: '100%', borderRadius: 3, width: `${b.pct * 100}%`, background: b.pct >= .8 ? '#059669' : b.pct >= .6 ? '#D97706' : '#DC2626' }}></div>
+            </div>
+            <span style={{ fontSize: 11, fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--text-2)', minWidth: 36 }}>{Math.round(b.pct * 100)}%</span>
+            <span style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>{b.correct}/{b.total}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ===== PORTFOLIO ACTUAL VS PREDICTED ===== */
+function PortfolioActualVsPredicted({ periodGroups }) {
+  const bars = periodGroups.map(pg => {
+    const predicted = pg.data.reduce((s, d) => s + (d.predictedClosingBal || 0), 0);
+    const actual = pg.data.filter(d => d.actualClosingBal != null).reduce((s, d) => s + (d.actualClosingBal || 0), 0);
+    const hasActual = pg.data.some(d => d.actualClosingBal != null && d.actualClosingBal > 0);
+    const error = hasActual ? actual - predicted : null;
+    const errorPct = hasActual && predicted > 0 ? ((actual - predicted) / predicted * 100) : null;
+    return { period: pg.period, predicted, actual, hasActual, error, errorPct };
+  }).filter(b => b.predicted > 0);
+
+  if (!bars.length) return <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>No balance data available.</div>;
+
+  const hasAnyActual = bars.some(b => b.hasActual);
+  const maxVal = Math.max(...bars.flatMap(b => [b.predicted, b.actual || 0]), 1);
+  const fmtK = v => v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'K' : Math.round(v).toLocaleString();
+  const fmt = p => { const [y, m] = p.split('-'); const names = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[parseInt(m)]} '${y.slice(2)}`; };
+
+  const barW = 30, barGap = 6, groupGap = 28, cH = 160, padL = 56, padT = 14, padB = 44;
+  const groupW = barW * 2 + barGap + groupGap;
+  const tW = padL + bars.length * groupW + 20;
+  const sH = padT + cH + padB;
+  const [hi, setHi] = React.useState(null);
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 10 }}>
+        Aggregate closing balance: predicted (indigo) vs actual (amber) per period.
+        {!hasAnyActual && ' Actual data not yet available.'}
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+      <svg width={tW} height={sH} viewBox={`0 0 ${tW} ${sH}`} style={{ display: 'block' }}>
+        {[0, .25, .5, .75, 1].map((p, i) => {
+          const y = padT + cH - cH * p;
+          return <g key={i}><line x1={padL} y1={y} x2={tW - 10} y2={y} stroke="#F3F4F6" /><text x={padL - 6} y={y + 3.5} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{fmtK(maxVal * p)}</text></g>;
+        })}
+        {bars.map((b, i) => {
+          const gx = padL + 6 + i * groupW;
+          const predH = Math.max((b.predicted / maxVal) * cH, 3);
+          const actH = b.hasActual ? Math.max((b.actual / maxVal) * cH, 3) : 0;
+          const dim = hi != null && hi !== i;
+          return (
+            <g key={b.period} style={{ opacity: dim ? .6 : 1, transition: 'opacity .15s', cursor: 'pointer' }}
+              onMouseEnter={() => setHi(i)} onMouseLeave={() => setHi(null)}>
+              {/* Predicted bar */}
+              <rect x={gx} y={padT + cH - predH} width={barW} height={predH} rx={4} fill="var(--accent)" opacity={.75} />
+              <text x={gx + barW / 2} y={padT + cH - predH - 5} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--accent)" fontFamily="var(--mono)">{fmtK(b.predicted)}</text>
+              {/* Actual bar */}
+              {b.hasActual && <>
+                <rect x={gx + barW + barGap} y={padT + cH - actH} width={barW} height={actH} rx={4} fill="#F59E0B" opacity={.85} />
+                <text x={gx + barW + barGap + barW / 2} y={padT + cH - actH - 5} textAnchor="middle" fontSize="10" fontWeight="700" fill="#B45309" fontFamily="var(--mono)">{fmtK(b.actual)}</text>
+              </>}
+              {/* Error label below */}
+              {b.errorPct != null && (
+                <text x={gx + barW + barGap / 2} y={padT + cH + 28} textAnchor="middle" fontSize="10" fontWeight="700"
+                  fill={b.errorPct > 0 ? '#059669' : '#DC2626'} fontFamily="var(--mono)">
+                  {b.errorPct > 0 ? '+' : ''}{b.errorPct.toFixed(1)}%
+                </text>
+              )}
+              {/* Period label */}
+              <text x={gx + (hasAnyActual ? barW + barGap / 2 : barW / 2)} y={padT + cH + 16} textAnchor="middle" fontSize="11" fill="var(--text-2)" fontWeight="600">{fmt(b.period)}</text>
+            </g>
+          );
+        })}
+      </svg>
+      </div>
+      <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 4 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-2)' }}><span style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--accent)', opacity: .75 }}></span>Predicted</span>
+        {hasAnyActual && <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-2)' }}><span style={{ width: 10, height: 10, borderRadius: 3, background: '#F59E0B', opacity: .85 }}></span>Actual</span>}
+      </div>
+    </div>
+  );
+}
+
+/* ===== ABC TIER × ACTION CROSS-TAB ===== */
+function ABCDistributionChart({ data, abcByCode }) {
+  const tiers = ['A', 'B', 'C'];
+  const actions = ['Deliver', 'Return', 'No Change'];
+  const colors = { Deliver: '#059669', Return: '#DC2626', 'No Change': '#D97706' };
+  const tierColors = { A: '#059669', B: '#D97706', C: '#9CA3AF' };
+
+  const matrix = tiers.map(tier =>
+    actions.map(a => data.filter(d => abcByCode[d.itemCode] === tier && d.predictedAction === a).length)
+  );
+  const totals = tiers.map((_, i) => matrix[i].reduce((s, c) => s + c, 0));
+  const maxTotal = Math.max(...totals, 1);
+
+  const barH = 28, gap = 14, padL = 42, padR = 60, padT = 8, padB = 32;
+  const chartW = 420;
+  const svgH = padT + tiers.length * (barH + gap) + padB;
+
+  const [hov, setHov] = React.useState(null);
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>
+        Item count per ABC tier, stacked by predicted action. A = high-value, C = low-value items.
+      </div>
+      <svg width="100%" height={svgH} viewBox={`0 0 ${chartW} ${svgH}`} style={{ overflow: 'visible' }}>
+        {tiers.map((tier, ti) => {
+          const y = padT + ti * (barH + gap);
+          const total = totals[ti];
+          let xOff = padL;
+          return (
+            <g key={tier}>
+              <text x={padL - 8} y={y + barH / 2 + 4} textAnchor="end" fontSize="12" fontWeight="800"
+                fill={tierColors[tier]} fontFamily="var(--mono)">{tier}</text>
+              {total === 0
+                ? <rect x={padL} y={y} width={chartW - padL - padR} height={barH} rx={6} fill="#F3F4F6" />
+                : matrix[ti].map((count, ci) => {
+                  const w = (count / maxTotal) * (chartW - padL - padR);
+                  const rx0 = ci === 0 ? 6 : 0;
+                  const rx1 = ci === matrix[ti].length - 1 ? 6 : 0;
+                  const isHov = hov && hov.t === ti && hov.a === ci;
+                  const el = (
+                    <g key={ci} style={{ cursor: 'pointer' }}
+                      onMouseEnter={() => setHov({ t: ti, a: ci, count })}
+                      onMouseLeave={() => setHov(null)}>
+                      <rect x={xOff} y={y} width={Math.max(w, 0)} height={barH}
+                        fill={colors[actions[ci]]} opacity={isHov ? 1 : 0.82}
+                        rx={0}
+                        style={{ transition: 'opacity .15s' }}
+                      />
+                      {w > 22 && <text x={xOff + w / 2} y={y + barH / 2 + 4} textAnchor="middle"
+                        fontSize="11" fontWeight="700" fill="#fff" fontFamily="var(--mono)">{count}</text>}
+                    </g>
+                  );
+                  xOff += w;
+                  return el;
+                })
+              }
+              <text x={padL + (total / maxTotal) * (chartW - padL - padR) + 8} y={y + barH / 2 + 4}
+                fontSize="11" fill="var(--text-3)" fontFamily="var(--mono)">{total} items</text>
+            </g>
+          );
+        })}
+        {/* x-axis grid lines */}
+        {[0, .25, .5, .75, 1].map((p, i) => {
+          const x = padL + p * (chartW - padL - padR);
+          return <g key={i}>
+            <line x1={x} y1={padT - 4} x2={x} y2={padT + tiers.length * (barH + gap) - gap} stroke="#F3F4F6" />
+            {i > 0 && <text x={x} y={padT + tiers.length * (barH + gap) - gap + 14}
+              textAnchor="middle" fontSize="9" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(maxTotal * p)}</text>}
+          </g>;
+        })}
+      </svg>
+      <div style={{ display: 'flex', gap: 14, justifyContent: 'center', marginTop: 4 }}>
+        {actions.map(a => (
+          <span key={a} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-2)' }}>
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: colors[a] }}></span>{a}
+          </span>
+        ))}
+      </div>
+      {hov && (
+        <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-2)', marginTop: 6 }}>
+          Tier <b>{tiers[hov.t]}</b> · {actions[hov.a]}: <b style={{ color: colors[actions[hov.a]] }}>{hov.count} items</b>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ===== BALANCE BRACKET CHART ===== */
+function BalanceBracketChart({ data }) {
+  const brackets = [
+    { label: '< 1K',     min: 0,      max: 1000   },
+    { label: '1K–10K',   min: 1000,   max: 10000  },
+    { label: '10K–50K',  min: 10000,  max: 50000  },
+    { label: '50K–200K', min: 50000,  max: 200000 },
+    { label: '200K+',    min: 200000, max: Infinity },
+  ];
+  const actions = ['Deliver', 'Return', 'No Change'];
+  const colors = { Deliver: '#059669', Return: '#DC2626', 'No Change': '#D97706' };
+  const [hov, setHov] = React.useState(null);
+
+  const matrix = brackets.map(br =>
+    actions.map(a =>
+      data.filter(d =>
+        d.predictedAction === a &&
+        (d.predictedClosingBal || 0) >= br.min &&
+        (d.predictedClosingBal || 0) < br.max
+      ).length
+    )
+  );
+  const totals = brackets.map((_, i) => matrix[i].reduce((s, c) => s + c, 0));
+  const maxTotal = Math.max(...totals, 1);
+
+  const barH = 26, gap = 10, padL = 76, padR = 56, padT = 8, padB = 12;
+  const chartW = 420;
+  const svgH = padT + brackets.length * (barH + gap) + padB;
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>
+        Items grouped by predicted closing balance. Shows where action decisions concentrate.
+      </div>
+      <svg width="100%" height={svgH} viewBox={`0 0 ${chartW} ${svgH}`} style={{ overflow: 'visible' }}>
+        {brackets.map((br, bi) => {
+          const y = padT + bi * (barH + gap);
+          const total = totals[bi];
+          let xOff = padL;
+          return (
+            <g key={bi}>
+              <text x={padL - 8} y={y + barH / 2 + 4} textAnchor="end" fontSize="10"
+                fill="var(--text-2)" fontWeight="600">{br.label}</text>
+              {total === 0
+                ? <rect x={padL} y={y} width={chartW - padL - padR} height={barH} rx={6} fill="#F3F4F6" />
+                : matrix[bi].map((count, ci) => {
+                  const w = (count / maxTotal) * (chartW - padL - padR);
+                  const isHov = hov && hov.b === bi && hov.a === ci;
+                  const el = (
+                    <g key={ci} style={{ cursor: 'pointer' }}
+                      onMouseEnter={() => setHov({ b: bi, a: ci, count, label: br.label })}
+                      onMouseLeave={() => setHov(null)}>
+                      <rect x={xOff} y={y} width={Math.max(w, 0)} height={barH}
+                        fill={colors[actions[ci]]} opacity={isHov ? 1 : 0.8}
+                        style={{ transition: 'opacity .15s' }} />
+                      {w > 20 && <text x={xOff + w / 2} y={y + barH / 2 + 4} textAnchor="middle"
+                        fontSize="10" fontWeight="700" fill="#fff" fontFamily="var(--mono)">{count}</text>}
+                    </g>
+                  );
+                  xOff += w;
+                  return el;
+                })
+              }
+              <text x={padL + (total / maxTotal) * (chartW - padL - padR) + 8} y={y + barH / 2 + 4}
+                fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{total}</text>
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{ display: 'flex', gap: 14, justifyContent: 'center', marginTop: 6 }}>
+        {actions.map(a => (
+          <span key={a} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-2)' }}>
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: colors[a] }}></span>{a}
+          </span>
+        ))}
+      </div>
+      {hov && (
+        <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-2)', marginTop: 4 }}>
+          Balance <b>{hov.label}</b> · {actions[hov.a]}: <b style={{ color: colors[actions[hov.a]] }}>{hov.count} items</b>
+        </div>
+      )}
+    </div>
+  );
+}
+
+Object.assign(window, { ActionDonut, TopItemsBar, HVBreakdown, ClosingBalancePortfolio, ActionFlowSankey, BalanceScatter, ModelAccuracyTable, ActionMagnitudeHeatmap, ActionCountBars, HighVelocityItems, HVMovementByPeriod, ItemForecastCard, ItemForecastsGrid, MapeDistributionChart, DirectionAccuracyRing, PortfolioActualVsPredicted, ABCDistributionChart, BalanceBracketChart });

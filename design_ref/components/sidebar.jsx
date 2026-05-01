@@ -2,7 +2,8 @@
 
 function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDataSource, itemCount }) {
   const nav = [
-    { id: 'predictions', label: 'Monthly Predictions', icon: 'chart' },
+    { id: 'predictions', label: 'Predictions', icon: 'chart' },
+    { id: 'forecasts', label: 'Item Forecasts', icon: 'forecasts', badge: null },
     { id: 'explorer', label: 'Item Explorer', icon: 'table', badge: itemCount },
     { id: 'upload', label: 'Upload Data', icon: 'upload' },
   ];
@@ -17,6 +18,7 @@ function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDa
     upload: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></>,
     chevronL: <><polyline points="15 18 9 12 15 6"></polyline></>,
     chevronR: <><polyline points="9 18 15 12 9 6"></polyline></>,
+    forecasts: <><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path><path d="M2 20h20"></path></>,
   };
 
   const SvgIcon = ({ name, size = 18 }) => (

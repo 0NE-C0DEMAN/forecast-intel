@@ -11,8 +11,9 @@ from streamlit.components.v1 import html as components_html
 
 ROOT = Path(__file__).parent
 DESIGN = ROOT / "design_ref"
-DEFAULT_DATA = ROOT / "Re_Forecast_2026_JanFeb_train24_25.xlsx"
+DEFAULT_DATA = ROOT / "Forecast_26_Jan_Feb_Results_train24_25_fixed.xlsx"
 MONTHLY_SHEET = "Monthly_Predictions"
+MAPE_SHEET = "MAPE_Summary"
 
 REQUIRED_COLUMNS = [
     "Item Code",
@@ -23,6 +24,7 @@ REQUIRED_COLUMNS = [
     "Prev Closing Balance",
     "Predicted Closing Bal",
     "Actual Closing Bal",
+    "Error",
     "Difference",
     "Predicted Action",
     "Actual Action",
@@ -32,7 +34,7 @@ REQUIRED_COLUMNS = [
 ]
 
 st.set_page_config(
-    page_title="Forecast Intel — Monthly Predictions",
+    page_title="Forecast Intel",
     page_icon=":bar_chart:",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -112,6 +114,7 @@ def _df_to_records(df: pd.DataFrame) -> list[dict]:
                 "prevClosingBal": num(r.get("Prev Closing Balance")),
                 "predictedClosingBal": num(r.get("Predicted Closing Bal")),
                 "actualClosingBal": num(r.get("Actual Closing Bal")),
+                "error": num(r.get("Error")),
                 "difference": num(r.get("Difference")),
                 "predictedAction": text(r.get("Predicted Action")),
                 "actualAction": text(r.get("Actual Action")),
@@ -123,40 +126,99 @@ def _df_to_records(df: pd.DataFrame) -> list[dict]:
     return records
 
 
-@st.cache_data(show_spinner=False)
-def load_default_records(mtime: float) -> list[dict]:
-    df = pd.read_excel(DEFAULT_DATA, sheet_name=MONTHLY_SHEET)
-    return _df_to_records(df)
+def _mape_df_to_records(df: pd.DataFrame) -> list[dict]:
+    def num(v):
+        if pd.isna(v):
+            return None
+        return float(v)
+
+    def text(v):
+        if pd.isna(v):
+            return None
+        return str(v).strip()
+
+    def intval(v):
+        if pd.isna(v):
+            return None
+        return int(v)
+
+    records = []
+    for _, r in df.iterrows():
+        records.append(
+            {
+                "period": text(r.get("Period")),
+                "model": text(r.get("Model")),
+                "mapeAll": num(r.get("MAPE All Items (%)")),
+                "mapeHV": num(r.get("MAPE HV Items (%)")),
+                "itemsPredicted": intval(r.get("Items Predicted")),
+                "itemsDeliver": intval(r.get("Items Deliver")),
+                "itemsReturn": intval(r.get("Items Return")),
+                "tier": text(r.get("Tier")),
+            }
+        )
+    return records
 
 
 @st.cache_data(show_spinner=False)
-def parse_uploaded_records(blob: bytes, name: str) -> tuple[list[dict] | None, list[str]]:
+def load_default_records(mtime: float) -> dict:
+    """Load all sheets from the default workbook. Returns dict keyed by model type."""
+    sheets = pd.read_excel(DEFAULT_DATA, sheet_name=None)
+
+    def safe_load(sheet_name: str) -> list[dict]:
+        if sheet_name in sheets:
+            return _df_to_records(sheets[sheet_name])
+        return []
+
+    monthly = safe_load(MONTHLY_SHEET)
+
+    mape_records: list[dict] = []
+    if MAPE_SHEET in sheets:
+        all_mape = _mape_df_to_records(sheets[MAPE_SHEET])
+        # Only keep monthly rows — quarterly/half-yearly not used
+        mape_records = [r for r in all_mape if r.get("model", "").lower().startswith("month")]
+
+    return {
+        "monthly": monthly,
+        "mape": mape_records,
+    }
+
+
+@st.cache_data(show_spinner=False)
+def parse_uploaded_records(blob: bytes, name: str) -> tuple[list[dict] | None, list[str], list[dict]]:
     issues: list[str] = []
+    mape_records: list[dict] = []
     try:
         if name.lower().endswith(".csv"):
             df = pd.read_csv(io.BytesIO(blob))
         else:
-            sheets = pd.read_excel(io.BytesIO(blob), sheet_name=None)
-            if MONTHLY_SHEET in sheets:
-                df = sheets[MONTHLY_SHEET]
+            file_sheets = pd.read_excel(io.BytesIO(blob), sheet_name=None)
+            # Try to extract MAPE summary if present
+            if MAPE_SHEET in file_sheets:
+                try:
+                    all_mape = _mape_df_to_records(file_sheets[MAPE_SHEET])
+                    mape_records = [r for r in all_mape if r.get("model", "").lower().startswith("month")]
+                except Exception:
+                    pass
+            if MONTHLY_SHEET in file_sheets:
+                df = file_sheets[MONTHLY_SHEET]
             else:
-                month_cands = [k for k in sheets if "month" in k.lower()]
+                month_cands = [k for k in file_sheets if "month" in k.lower()]
                 if not month_cands:
                     return None, [
                         f"No '{MONTHLY_SHEET}' sheet (or any sheet containing 'month') was found."
-                    ]
-                df = sheets[month_cands[0]]
+                    ], []
+                df = file_sheets[month_cands[0]]
                 issues.append(
                     f"Sheet '{MONTHLY_SHEET}' not found; using '{month_cands[0]}' instead."
                 )
     except Exception as exc:
-        return None, [f"Could not parse the file: {exc}"]
+        return None, [f"Could not parse the file: {exc}"], []
 
     missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
     if missing:
-        return None, [f"Missing required columns: {', '.join(missing)}"]
+        return None, [f"Missing required columns: {', '.join(missing)}"], []
 
-    return _df_to_records(df), issues
+    return _df_to_records(df), issues, mape_records
 
 
 @st.cache_data(show_spinner=False)
@@ -178,7 +240,12 @@ def _design_version() -> float:
     return max(p.stat().st_mtime for p in paths)
 
 
-def build_html(records: list[dict], source_label: str, last_error: str | None) -> str:
+def build_html(
+    records: list[dict],
+    source_label: str,
+    last_error: str | None,
+    mape_summary: list[dict] | None = None,
+) -> str:
     src = _read_design_files(_design_version())
     html = src["main_html"]
 
@@ -187,6 +254,8 @@ def build_html(records: list[dict], source_label: str, last_error: str | None) -
         " window.dispatchEvent(new Event('dataready')); });"
     )
     json_str = json.dumps(records, default=str).replace("</", "<\\/")
+    mape_str = json.dumps(mape_summary or [], default=str).replace("</", "<\\/")
+
     bridge_js = """
 window.__showErrorToast = function(msg) {
   if (!msg) return;
@@ -228,6 +297,7 @@ window.__expandHostUploader = function() {
 """
     fetch_new = (
         f"window.__RAW_DATA = {json_str}; "
+        f"window.__MAPE_SUMMARY = {mape_str}; "
         f"window.__SOURCE_LABEL = {json.dumps(source_label)}; "
         f"window.__LAST_ERROR = {json.dumps(last_error)}; "
         f"{bridge_js} "
@@ -256,11 +326,11 @@ window.__expandHostUploader = function() {
 
 
 if "records" not in st.session_state:
-    st.session_state.records = load_default_records(DEFAULT_DATA.stat().st_mtime)
+    all_data = load_default_records(DEFAULT_DATA.stat().st_mtime)
+    st.session_state.records = all_data["monthly"]
+    st.session_state.mape_summary = all_data["mape"]
     st.session_state.source_label = f"Bundled · {DEFAULT_DATA.name}"
     st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-
 
 if "last_error" not in st.session_state:
     st.session_state.last_error = None
@@ -275,16 +345,19 @@ with st.container(key="forecast_bridge"):
 
 if upload is not None:
     if upload.name == "__RESET_TO_BUNDLED__.csv":
-        st.session_state.records = load_default_records(DEFAULT_DATA.stat().st_mtime)
+        all_data = load_default_records(DEFAULT_DATA.stat().st_mtime)
+        st.session_state.records = all_data["monthly"]
+        st.session_state.mape_summary = all_data["mape"]
         st.session_state.source_label = f"Bundled · {DEFAULT_DATA.name}"
         st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
         st.session_state.last_error = None
     else:
-        recs, issues = parse_uploaded_records(upload.getvalue(), upload.name)
+        recs, issues, mape_from_upload = parse_uploaded_records(upload.getvalue(), upload.name)
         if recs is None:
             st.session_state.last_error = "; ".join(issues) if issues else "File rejected."
         else:
             st.session_state.records = recs
+            st.session_state.mape_summary = mape_from_upload
             st.session_state.source_label = f"Uploaded · {upload.name}"
             st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
             st.session_state.last_error = None
@@ -293,6 +366,9 @@ if upload is not None:
 last_error = st.session_state.last_error
 st.session_state.last_error = None
 html_doc = build_html(
-    st.session_state.records, st.session_state.source_label, last_error
+    st.session_state.records,
+    st.session_state.source_label,
+    last_error,
+    mape_summary=st.session_state.get("mape_summary", []),
 )
 components_html(html_doc, height=1100, scrolling=True)

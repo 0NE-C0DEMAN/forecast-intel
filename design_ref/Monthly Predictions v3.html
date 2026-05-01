@@ -151,15 +151,15 @@ function PeriodSelector({ value, onChange, options }) {
   );
 }
 
+/* ===== MODEL TYPE SELECTOR ===== */
 function App() {
-  const [data, setData] = useState(null);
+  const [rawData, setRawData] = useState(null);
   const [page, setPage] = useState('predictions');
-  const [period, setPeriod] = useState('2026-01');
+  const [period, setPeriod] = useState(null);
   const [collapsed, setCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 900);
   const [dsOpen, setDsOpen] = useState(false);
   const tweaks = useTweaks(TWEAK_DEFAULTS);
 
-  // Auto-collapse sidebar when crossing the mobile breakpoint
   useEffect(() => {
     if (typeof window === 'undefined') return;
     let prev = window.innerWidth >= 900;
@@ -172,12 +172,23 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (window.__RAW_DATA) setData(window.__RAW_DATA);
-    else window.addEventListener('dataready', () => setData(window.__RAW_DATA));
+    const init = () => setRawData(window.__RAW_DATA || []);
+    if (window.__RAW_DATA) { init(); return; }
+    window.addEventListener('dataready', init, { once: true });
+    return () => window.removeEventListener('dataready', init);
   }, []);
 
+  const data = rawData;
+
   const allPeriods = useMemo(() => data ? [...new Set(data.map(d => d.period))].sort() : [], [data]);
-  const periodData = useMemo(() => data ? data.filter(d => d.period === period) : [], [data, period]);
+
+  // Reset period when model type or periods change
+  useEffect(() => {
+    if (allPeriods.length > 0) setPeriod(p => allPeriods.includes(p) ? p : allPeriods[allPeriods.length - 1]);
+  }, [allPeriods]);
+
+  const activePeriod = period || allPeriods[allPeriods.length - 1] || null;
+  const periodData = useMemo(() => data ? data.filter(d => d.period === activePeriod) : [], [data, activePeriod]);
   const periodGroups = useMemo(() => allPeriods.map(p => ({ period: p, data: data ? data.filter(d => d.period === p) : [] })), [data, allPeriods]);
 
   const stats = useMemo(() => {
@@ -190,10 +201,11 @@ function App() {
     const prevTotal = d.reduce((s, x) => s + (x.prevClosingBal || 0), 0);
     const predTotal = d.reduce((s, x) => s + (x.predictedClosingBal || 0), 0);
     const hvCount = d.filter(x => x.isHV).length;
-    return { deliver: deliver.length, return: ret.length, noChange: nc.length, total: d.length, deliverQty, returnQty, prevTotal, predTotal, hvCount };
+    const hasActuals = d.some(x => x.actualClosingBal != null);
+    return { deliver: deliver.length, return: ret.length, noChange: nc.length, total: d.length, deliverQty, returnQty, prevTotal, predTotal, hvCount, hasActuals };
   }, [periodData]);
 
-  if (!data) return (
+  if (!rawData) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', width: '100vw', color: 'var(--text-3)', fontSize: 14, gap: 10 }}>
       <div style={{ width: 20, height: 20, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin .6s linear infinite' }}></div>
       Loading…
@@ -201,26 +213,35 @@ function App() {
     </div>
   );
 
-  const periodLabel = { '2026-01': 'January 2026', '2026-02': 'February 2026' }[period] || period;
+  const pageTitle = page === 'predictions' ? 'Monthly Predictions'
+    : page === 'explorer' ? 'Item Explorer'
+    : page === 'forecasts' ? 'Item Forecasts'
+    : 'Upload Data';
 
   return (
     <>
       <Sidebar activePage={page} onNavigate={setPage} collapsed={collapsed} onToggleCollapse={() => setCollapsed(!collapsed)} onOpenDataSource={() => setDsOpen(true)} itemCount={stats.total} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Top bar */}
-        <header style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: 16, borderBottom: '1px solid var(--border)', flexShrink: 0, background: '#fff' }}>
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <h1 style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>
-              {page === 'predictions' ? 'Monthly Predictions' : page === 'explorer' ? 'Item Explorer' : 'Upload Data'}
-            </h1>
-            <span style={{ fontSize: 10, color: 'var(--text-3)', background: '#F3F4F6', padding: '3px 8px', borderRadius: 5, fontWeight: 500, whiteSpace: 'nowrap' }}>Future mode · no actuals</span>
+        <header style={{ padding: '10px 20px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--border)', flexShrink: 0, background: '#fff' }}>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <h1 style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>{pageTitle}</h1>
+            {stats.hasActuals && (
+              <span style={{ fontSize: 10, color: '#059669', background: 'rgba(5,150,105,.08)', padding: '2px 7px', borderRadius: 5, fontWeight: 600, whiteSpace: 'nowrap' }}>Actuals available</span>
+            )}
+            {!stats.hasActuals && page === 'predictions' && (
+              <span style={{ fontSize: 10, color: 'var(--text-3)', background: '#F3F4F6', padding: '2px 7px', borderRadius: 5, fontWeight: 500, whiteSpace: 'nowrap' }}>Future mode</span>
+            )}
           </div>
-          {page === 'predictions' && <PeriodSelector value={period} onChange={setPeriod} options={allPeriods} />}
+          {page === 'predictions' && allPeriods.length > 0 && (
+            <PeriodSelector value={activePeriod} onChange={setPeriod} options={allPeriods} />
+          )}
         </header>
 
         <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          {page === 'predictions' && <PredictionsPage data={periodData} allData={data} stats={stats} periodGroups={periodGroups} period={period} />}
-          {page === 'explorer' && <ItemExplorerPage allData={data} period={period} />}
+          {page === 'predictions' && <PredictionsPage data={periodData} allData={data} stats={stats} periodGroups={periodGroups} period={activePeriod} />}
+          {page === 'explorer' && <ItemExplorerPage allData={data} period={activePeriod} />}
+          {page === 'forecasts' && <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '14px 20px 0' }}><ItemForecastsGrid allData={data || []} /></div>}
           {page === 'upload' && <div style={{ padding: 24, overflow: 'auto' }}><UploadDataPage onOpenDataSource={() => setDsOpen(true)} /></div>}
         </main>
       </div>
@@ -242,6 +263,7 @@ function PredictionsPage({ data, allData, stats, periodGroups, period }) {
     { id: 'distribution', label: 'Distribution' },
     { id: 'insights', label: 'Insights' },
     { id: 'items', label: 'Line Items' },
+    { id: 'accuracy', label: 'Model Accuracy' },
   ];
 
   return (
@@ -272,19 +294,130 @@ function PredictionsPage({ data, allData, stats, periodGroups, period }) {
 
       {/* Tab content */}
       <div style={{ flex: 1, overflow: 'hidden', padding: 16, display: 'flex', flexDirection: 'column' }}>
-        {tab === 'overview' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><OverviewTab data={data} stats={stats} periodGroups={periodGroups} /></div>}
-        {tab === 'movement' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><MovementTab data={data} periodGroups={periodGroups} period={period} /></div>}
-        {tab === 'distribution' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><DistributionTab data={data} /></div>}
+        {tab === 'overview' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><OverviewTab data={data} stats={stats} periodGroups={periodGroups} period={period} /></div>}
+        {tab === 'movement' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><MovementTab data={data} periodGroups={periodGroups} /></div>}
+        {tab === 'distribution' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><DistributionTab data={data} allData={allData} /></div>}
         {tab === 'insights' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><InsightsTab data={data} allData={allData} periodGroups={periodGroups} period={period} /></div>}
         {tab === 'items' && <ItemsTableTab data={data} />}
+        {tab === 'accuracy' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><AccuracyTab periodGroups={periodGroups} allData={allData} /></div>}
       </div>
     </div>
   );
 }
 
-function OverviewTab({ data, stats, periodGroups }) {
+function OverviewTab({ data, stats, periodGroups, period }) {
+  const mapeData = window.__MAPE_SUMMARY || [];
+  // Direction accuracy from actual data rows
+  const rowsWithActual = (data || []).filter(d => d.directionCorrect != null);
+  const dirAcc = rowsWithActual.length > 0 ? Math.round(rowsWithActual.filter(d => d.directionCorrect).length / rowsWithActual.length * 100) : null;
+  const hvRows = rowsWithActual.filter(d => d.isHV);
+  const hvDirAcc = hvRows.length > 0 ? Math.round(hvRows.filter(d => d.directionCorrect).length / hvRows.length * 100) : null;
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 'min-content', gap: 12 }}>
+      {/* Forecast Accuracy Strip */}
+      {mapeData.length > 0 && (() => {
+        const fmtPeriodLabel = p => {
+          if (!p) return p;
+          const m = p.match(/^(\d{4})-(\d{2})$/);
+          if (m) { const ns = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return ns[parseInt(m[2])-1] + ' ' + m[1]; }
+          const q = p.match(/^(\d{4})-Q(\d)$/); if (q) return `Q${q[2]} ${q[1]}`;
+          const h = p.match(/^(\d{4})-H(\d)$/); if (h) return `H${h[2]} ${h[1]}`;
+          return p;
+        };
+        const tierMeta = t => t === 'Low'
+          ? { label: 'Good accuracy', icon: '✓', bg: 'rgba(5,150,105,.07)', color: '#059669', line: '#059669' }
+          : t === 'Moderate'
+          ? { label: 'Moderate error', icon: '~', bg: 'rgba(217,119,6,.07)', color: '#B45309', line: '#D97706' }
+          : { label: 'High error', icon: '⚠', bg: 'rgba(220,38,38,.07)', color: '#DC2626', line: '#DC2626' };
+        const errColor = v => v == null ? 'var(--text-3)' : v > 100 ? '#DC2626' : v > 50 ? '#D97706' : '#059669';
+        const ErrBar = ({ v }) => {
+          if (v == null) return null;
+          const pct = Math.min(v / 200, 1) * 100;
+          const col = v > 100 ? '#DC2626' : v > 50 ? '#D97706' : '#059669';
+          return (
+            <div style={{ position: 'relative', marginTop: 5 }}>
+              <div style={{ width: '100%', height: 4, background: '#F3F4F6', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${pct}%`, background: col, opacity: .7, borderRadius: 2 }} />
+              </div>
+              {/* Threshold ticks */}
+              <div style={{ position: 'absolute', left: '25%', top: 0, width: 1, height: 4, background: '#D1D5DB' }} />
+              <div style={{ position: 'absolute', left: '50%', top: 0, width: 1, height: 4, background: '#D1D5DB' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
+                <span style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>0</span>
+                <span style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>100%</span>
+                <span style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>200%</span>
+              </div>
+            </div>
+          );
+        };
+        const allMonthly = mapeData.filter(r => (r.model || '').toLowerCase().startsWith('month'));
+        const monthlyData = period ? allMonthly.filter(r => r.period === period) : allMonthly.slice(0, 1);
+        if (!monthlyData.length) return null;
+        return (
+          <div style={{ gridColumn: 'span 6' }}>
+            {/* Strip header */}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-2)' }}>Forecast Accuracy · {fmtPeriodLabel(period)}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                · MAPE = avg % error between predicted and actual closing balance.
+                &nbsp;<b style={{ color: '#059669' }}>&lt;30% excellent</b>,
+                &nbsp;<b style={{ color: '#D97706' }}>30–100% acceptable</b>,
+                &nbsp;<b style={{ color: '#DC2626' }}>&gt;100% high error</b>.
+              </span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${monthlyData.length}, 1fr)`, gap: 10 }}>
+              {monthlyData.map((r, i) => {
+                const tm = tierMeta(r.tier);
+                return (
+                  <div key={i} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' }}>
+                    {/* Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                      <div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', lineHeight: 1 }}>{fmtPeriodLabel(r.period)}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 3 }}>{r.itemsPredicted ? r.itemsPredicted + ' items forecast' : 'Monthly forecast'}</div>
+                      </div>
+                      {r.tier && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 20, background: tm.bg, color: tm.color, whiteSpace: 'nowrap' }}>
+                          {tm.icon} {tm.label}
+                        </span>
+                      )}
+                    </div>
+                    {/* Primary: Direction accuracy */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1px 1fr', gap: 14, alignItems: 'start', marginBottom: 14 }}>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.04em' }}>Direction Accuracy</div>
+                        <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'var(--mono)', lineHeight: 1, color: dirAcc != null ? (dirAcc >= 80 ? '#059669' : dirAcc >= 60 ? '#D97706' : '#DC2626') : 'var(--text-3)' }}>
+                          {dirAcc != null ? dirAcc + '%' : '—'}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 3 }}>actions correctly predicted</div>
+                      </div>
+                      <div style={{ background: '#F3F4F6', height: '100%', minHeight: 36, width: 1 }} />
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.04em' }}>HV Accuracy</div>
+                        <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'var(--mono)', lineHeight: 1, color: hvDirAcc != null ? (hvDirAcc >= 80 ? '#059669' : hvDirAcc >= 60 ? '#D97706' : '#DC2626') : 'var(--text-3)' }}>
+                          {hvDirAcc != null ? hvDirAcc + '%' : '—'}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 3 }}>high-value items only</div>
+                      </div>
+                    </div>
+                    {/* Secondary: MAPE error bars (visual only, no raw %) */}
+                    <div style={{ borderTop: '1px solid #F3F4F6', paddingTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 9, color: 'var(--text-3)', marginBottom: 3 }}>Forecast error · All</div>
+                        <ErrBar v={r.mapeAll} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 9, color: 'var(--text-3)', marginBottom: 3 }}>Forecast error · HV</div>
+                        <ErrBar v={r.mapeHV} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
       <Card title="Action Mix" style={{ gridColumn: 'span 2' }}><ActionDonut data={data} /></Card>
       <Card title="HV vs Standard" style={{ gridColumn: 'span 2' }}><HVBreakdown data={data} /></Card>
       <Card title="Closing Balance" style={{ gridColumn: 'span 2' }}><ClosingBalancePortfolio data={data} /></Card>
@@ -294,55 +427,110 @@ function OverviewTab({ data, stats, periodGroups }) {
   );
 }
 
-function MovementTab({ data, periodGroups, period }) {
+function MovementTab({ data, periodGroups }) {
   const [pairFrom, setPairFrom] = useState(periodGroups.length >= 2 ? periodGroups[periodGroups.length - 2].period : null);
   const [pairTo, setPairTo] = useState(periodGroups.length >= 2 ? periodGroups[periodGroups.length - 1].period : null);
   const fromData = periodGroups.find(pg => pg.period === pairFrom)?.data || [];
   const toData = periodGroups.find(pg => pg.period === pairTo)?.data || [];
   const many = periodGroups.length > 4;
-  const changedCount = (() => {
-    const fm = {};
-    fromData.forEach(d => { fm[d.itemCode] = d.predictedAction; });
-    let changed = 0;
-    toData.forEach(d => { if (fm[d.itemCode] && fm[d.itemCode] !== d.predictedAction) changed++; });
-    return changed;
-  })();
+
+  const ac = a => a === 'Deliver' ? '#059669' : a === 'Return' ? '#DC2626' : '#D97706';
+  const fmtP = p => { if (!p) return ''; const [y, m] = p.split('-'); const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[parseInt(m)-1]} ${y}`; };
+
+  // Period-to-period action shift breakdown
+  const shiftData = useMemo(() => {
+    const map = {};
+    fromData.forEach(d => { map[d.itemCode] = d.predictedAction; });
+    const changeTypes = {}, stableCount = { Deliver: 0, Return: 0, 'No Change': 0 };
+    let total = 0;
+    toData.forEach(d => {
+      const prev = map[d.itemCode];
+      if (!prev) return;
+      total++;
+      if (prev === d.predictedAction) { stableCount[prev] = (stableCount[prev] || 0) + 1; return; }
+      const key = `${prev}||${d.predictedAction}`;
+      if (!changeTypes[key]) changeTypes[key] = { from: prev, to: d.predictedAction, count: 0 };
+      changeTypes[key].count++;
+    });
+    const shifts = Object.values(changeTypes).sort((a, b) => b.count - a.count);
+    const changedCount = shifts.reduce((s, c) => s + c.count, 0);
+    return { shifts, changedCount, stableCount, total };
+  }, [fromData, toData]);
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 'min-content', gap: 12 }}>
-      <Card title={`Action Counts by Period · ${periodGroups.length} period${periodGroups.length === 1 ? '' : 's'}`} style={{ gridColumn: 'span 6' }}>
+
+      {/* Row 1: Action counts (left) + HV breakdown (right) */}
+      <Card title={`Action Count by Period · ${periodGroups.length} period${periodGroups.length === 1 ? '' : 's'}`} style={{ gridColumn: 'span 3' }}>
         <ActionCountBars periodGroups={periodGroups} />
       </Card>
-
-      <Card title="Net Inventory Movement · units" style={{ gridColumn: 'span 6' }}>
-        <NetMovementBars periodGroups={periodGroups} dense={many} />
-      </Card>
-
-      <Card title="HV vs Standard Movement by Period" style={{ gridColumn: 'span 6' }}>
+      <Card title="HV vs Standard · items per action" style={{ gridColumn: 'span 3' }}>
         <HVMovementByPeriod periodGroups={periodGroups} />
       </Card>
 
-      <Card title="Top High-Velocity Items · cumulative across periods" style={{ gridColumn: 'span 6' }}>
+      {/* Row 2: Net qty movement — full width */}
+      <Card title="Net Inventory Movement · quantity units per period" style={{ gridColumn: 'span 6' }}>
+        <NetMovementBars periodGroups={periodGroups} dense={many} />
+      </Card>
+
+      {/* Row 3: Top movers (left) + Period shift summary (right) */}
+      <Card title="Top Items by Cumulative Movement" style={{ gridColumn: 'span 4' }}>
         <HighVelocityItems periodGroups={periodGroups} />
       </Card>
 
-      {periodGroups.length > 1 && (
-        <Card title={null} style={{ gridColumn: 'span 6' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>Action Flow Between Periods</span>
-            <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 600, marginLeft: 8 }}>Flow</span>
-            <PeriodPicker value={pairFrom} onChange={setPairFrom} options={periodGroups.map(p => p.period)} />
-            <span style={{ fontSize: 14, color: 'var(--text-3)' }}>→</span>
-            <PeriodPicker value={pairTo} onChange={setPairTo} options={periodGroups.map(p => p.period)} />
-            <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 'auto' }}>{changedCount} items changed direction</span>
+      {periodGroups.length > 1 ? (
+        <Card title="Period-to-Period Action Shifts" style={{ gridColumn: 'span 2' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {/* Period selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <PeriodPicker value={pairFrom} onChange={setPairFrom} options={periodGroups.map(p => p.period)} />
+              <span style={{ fontSize: 13, color: 'var(--text-3)' }}>→</span>
+              <PeriodPicker value={pairTo} onChange={setPairTo} options={periodGroups.map(p => p.period)} />
+            </div>
+            {/* KPI row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+              {[
+                { label: 'Changed', value: shiftData.changedCount, color: shiftData.changedCount > 0 ? '#D97706' : '#059669' },
+                { label: 'Stable', value: shiftData.total - shiftData.changedCount, color: '#059669' },
+                { label: 'Churn %', value: shiftData.total > 0 ? Math.round(shiftData.changedCount / shiftData.total * 100) + '%' : '—', color: 'var(--text)' },
+              ].map(k => (
+                <div key={k.label} style={{ background: '#FAFBFC', borderRadius: 7, padding: '7px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 18, fontWeight: 800, fontFamily: 'var(--mono)', color: k.color, lineHeight: 1 }}>{k.value}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 600, marginTop: 2 }}>{k.label}</div>
+                </div>
+              ))}
+            </div>
+            {/* Shift breakdown */}
+            {shiftData.shifts.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Action shifts</div>
+                {shiftData.shifts.map((c, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: ac(c.from), minWidth: 46, fontFamily: 'var(--mono)' }}>{c.from.slice(0,3)}</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-3)' }}>→</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: ac(c.to), minWidth: 46, fontFamily: 'var(--mono)' }}>{c.to.slice(0,3)}</span>
+                    <div style={{ flex: 1, height: 6, background: '#F3F4F6', borderRadius: 2, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${(c.count / (shiftData.shifts[0]?.count || 1)) * 100}%`, background: ac(c.to), opacity: .75, borderRadius: 2 }} />
+                    </div>
+                    <span style={{ fontSize: 11, fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--text-2)', minWidth: 22, textAlign: 'right' }}>{c.count}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: 'var(--text-3)', textAlign: 'center', padding: '12px 0' }}>No action changes between these periods</div>
+            )}
           </div>
-          <ActionFlowSankey janData={fromData} febData={toData} />
         </Card>
+      ) : (
+        <div style={{ gridColumn: 'span 2' }} />
       )}
 
-      <Card title="Model Accuracy" style={{ gridColumn: 'span 6' }}>
-        <ModelAccuracyTable periodGroups={periodGroups} />
-      </Card>
+      {/* Row 4: Action flow Sankey — full width, only if multiple periods */}
+      {periodGroups.length > 1 && (
+        <Card title={`Action Flow · ${fmtP(pairFrom)} → ${fmtP(pairTo)}`} style={{ gridColumn: 'span 6' }}>
+          <ActionFlowSankey janData={fromData} febData={toData} fromPeriod={pairFrom} toPeriod={pairTo} />
+        </Card>
+      )}
     </div>
   );
 }
@@ -359,53 +547,6 @@ function PeriodPicker({ value, onChange, options }) {
   );
 }
 
-function TrendLineChart({ periodGroups }) {
-  const points = periodGroups.map(pg => ({
-    period: pg.period,
-    deliver: pg.data.filter(d => d.predictedAction === 'Deliver').length,
-    return: pg.data.filter(d => d.predictedAction === 'Return').length,
-    nochange: pg.data.filter(d => d.predictedAction === 'No Change').length,
-    deliverQty: pg.data.filter(d => d.predictedAction === 'Deliver').reduce((s, d) => s + (d.quantity || 0), 0),
-    returnQty: pg.data.filter(d => d.predictedAction === 'Return').reduce((s, d) => s + (d.quantity || 0), 0),
-  }));
-  const max = Math.max(...points.flatMap(p => [p.deliver, p.return, p.nochange]), 1);
-  const w = 880, h = 220, padL = 44, padR = 16, padT = 16, padB = 40;
-  const cW = w - padL - padR, cH = h - padT - padB;
-  const x = (i) => padL + (points.length === 1 ? cW / 2 : (i / (points.length - 1)) * cW);
-  const y = (v) => padT + cH - (v / max) * cH;
-  const line = (key) => points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i)} ${y(p[key])}`).join(' ');
-  const colors = { deliver: '#059669', return: '#DC2626', nochange: '#D97706' };
-  const [hi, setHi] = React.useState(null);
-  const fmt = p => { const m = p.split('-')[1]; const names = ['','J','F','M','A','M','J','J','A','S','O','N','D']; return names[parseInt(m)]; };
-  const fullFmt = p => { const [y, m] = p.split('-'); const names = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[parseInt(m)]} ${y}`; };
-  const labelEvery = points.length > 24 ? 3 : points.length > 12 ? 2 : 1;
-
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: 14, marginBottom: 6, fontSize: 11, color: 'var(--text-2)' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 12, height: 2, background: colors.deliver }}></span>Deliver</span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 12, height: 2, background: colors.return }}></span>Return</span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 12, height: 2, background: colors.nochange }}></span>No Change</span>
-      </div>
-      <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ overflow: 'visible' }} onMouseLeave={() => setHi(null)}>
-        {[0,.25,.5,.75,1].map((p,i) => { const yy = padT + cH - cH * p; return <g key={i}><line x1={padL} y1={yy} x2={w-padR} y2={yy} stroke="#F3F4F6" /><text x={padL-6} y={yy+3.5} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(max*p)}</text></g>; })}
-        {/* Hover regions */}
-        {points.map((p, i) => (<rect key={i} x={x(i) - cW/(points.length*2)} y={padT} width={cW/Math.max(points.length-1,1)} height={cH} fill="transparent" onMouseEnter={() => setHi(i)} />))}
-        {hi != null && <line x1={x(hi)} y1={padT} x2={x(hi)} y2={padT+cH} stroke="var(--text-3)" strokeDasharray="3,3" strokeWidth={1} />}
-        {/* Lines */}
-        {['deliver','return','nochange'].map(key => <path key={key} d={line(key)} fill="none" stroke={colors[key]} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />)}
-        {/* Dots */}
-        {points.map((p, i) => ['deliver','return','nochange'].map(key => <circle key={key+i} cx={x(i)} cy={y(p[key])} r={hi === i ? 4 : 2.5} fill={colors[key]} />))}
-        {/* X axis labels */}
-        {points.map((p, i) => i % labelEvery === 0 && <text key={i} x={x(i)} y={padT+cH+14} textAnchor="middle" fontSize="9" fill="var(--text-3)" fontFamily="var(--mono)">{fmt(p.period)}</text>)}
-        {/* Year labels at boundaries */}
-        {(() => { const yrs = {}; points.forEach((p, i) => { const y = p.period.split('-')[0]; if (!yrs[y]) yrs[y] = []; yrs[y].push(i); }); return Object.entries(yrs).map(([yr, idxs]) => { const xPos = (x(idxs[0]) + x(idxs[idxs.length - 1])) / 2; return <text key={yr} x={xPos} y={padT+cH+30} textAnchor="middle" fontSize="11" fill="var(--text-2)" fontWeight="700" fontFamily="var(--mono)">{yr}</text>; }); })()}
-        {/* Tooltip */}
-        {hi != null && (() => { const p = points[hi]; const ttX = Math.min(Math.max(x(hi), padL + 80), w - padR - 80); return <g><rect x={ttX-72} y={padT+4} width={144} height={66} rx={6} fill="#fff" stroke="var(--border)" /><text x={ttX} y={padT+18} textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--text)">{fullFmt(p.period)}</text><text x={ttX-62} y={padT+34} fontSize="10" fill={colors.deliver} fontWeight="600">Deliver: {p.deliver}</text><text x={ttX-62} y={padT+48} fontSize="10" fill={colors.return} fontWeight="600">Return: {p.return}</text><text x={ttX-62} y={padT+62} fontSize="10" fill={colors.nochange} fontWeight="600">No Change: {p.nochange}</text></g>; })()}
-      </svg>
-    </div>
-  );
-}
 
 function NetMovementBars({ periodGroups, dense }) {
   const bars = periodGroups.map(pg => {
@@ -449,24 +590,115 @@ function NetMovementBars({ periodGroups, dense }) {
   );
 }
 
-function InsightsTab({ data, allData, periodGroups, period }) {
+function SectionLabel({ children }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gridAutoRows: 'min-content', gap: 12 }}>
-      <Card title="Auto-Insights · this period"><AutoInsights allData={allData} currentPeriod={period} /></Card>
-      <Card title="Stock-out & Excess Risk Watch"><RiskWatchlist data={data} allData={allData} currentPeriod={period} /></Card>
-      <Card title="ABC Pareto · 80/20 concentration"><ABCPareto data={data} /></Card>
-      {periodGroups.length > 1 && <Card title="Action Calendar Heatmap · top items × all periods"><ActionCalendarHeatmap data={allData} /></Card>}
-      {periodGroups.length > 1 && <Card title="Year-over-Year Comparison"><YearOverYearComparison allData={allData} /></Card>}
+    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
+      {children}
     </div>
   );
 }
 
-function DistributionTab({ data }) {
+function InsightsTab({ data, allData, periodGroups, period }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* ── Key Signals ── */}
+      <div>
+        <SectionLabel>Key Signals · this period</SectionLabel>
+        <AutoInsights allData={allData} currentPeriod={period} />
+      </div>
+
+      {/* ── Risk Watchlist ── */}
+      <div>
+        <SectionLabel>Risk Watchlist · stock-out, excess & persistent patterns</SectionLabel>
+        <RiskWatchlist data={data} allData={allData} currentPeriod={period} />
+      </div>
+
+      {/* ── ABC Pareto ── */}
+      <div>
+        <SectionLabel>ABC Pareto · 80 / 20 concentration</SectionLabel>
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 18px' }}>
+          <ABCPareto data={data} />
+        </div>
+      </div>
+
+      {/* ── Action Calendar (multi-period only) ── */}
+      {periodGroups.length > 1 && (
+        <div>
+          <SectionLabel>Action Calendar · top items × all periods</SectionLabel>
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 18px' }}>
+            <ActionCalendarHeatmap data={allData} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Year-over-Year (multi-year only) ── */}
+      {periodGroups.length > 1 && (
+        <div>
+          <SectionLabel>Year-over-Year Comparison</SectionLabel>
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 18px' }}>
+            <YearOverYearComparison allData={allData} />
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+function DistributionTab({ data, allData }) {
+  const abcByCode = useMemo(() => {
+    const sorted = [...(allData || [])].sort((a, b) => (b.prevClosingBal || 0) - (a.prevClosingBal || 0));
+    const codes = [...new Set(sorted.map(d => d.itemCode))];
+    const n = codes.length || 1;
+    const result = {};
+    codes.forEach((code, i) => {
+      const pct = i / n;
+      result[code] = pct < 0.2 ? 'A' : pct < 0.5 ? 'B' : 'C';
+    });
+    return result;
+  }, [allData]);
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 'min-content', gap: 12 }}>
-      <Card title="Quantity Distribution" style={{ gridColumn: 'span 6' }}><QuantityHistogram data={data} /></Card>
-      <Card title="Action × Magnitude Heatmap" style={{ gridColumn: 'span 6' }}><ActionMagnitudeHeatmap data={data} /></Card>
-      <Card title="Balance Scatter · previous → predicted" style={{ gridColumn: 'span 6' }}><BalanceScatter data={data} /></Card>
+      {/* ABC tier cross-tab + Balance bracket */}
+      <Card title="ABC Tier × Action · where is each tier going?" style={{ gridColumn: 'span 3' }}>
+        <ABCDistributionChart data={data} abcByCode={abcByCode} />
+      </Card>
+      <Card title="Balance Bracket · action density by balance size" style={{ gridColumn: 'span 3' }}>
+        <BalanceBracketChart data={data} />
+      </Card>
+
+      {/* Quantity magnitude heatmap */}
+      <Card title="Action × Quantity Magnitude · item count per cell" style={{ gridColumn: 'span 6' }}>
+        <ActionMagnitudeHeatmap data={data} />
+      </Card>
+
+      {/* Balance scatter */}
+      <Card title="Balance Scatter · previous → predicted closing balance" style={{ gridColumn: 'span 6' }}>
+        <BalanceScatter data={data} />
+      </Card>
+    </div>
+  );
+}
+
+/* ===== MODEL ACCURACY TAB ===== */
+function AccuracyTab({ periodGroups, allData }) {
+  const modelLabel = 'Monthly';
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 'min-content', gap: 12 }}>
+      <Card title="Portfolio: Predicted vs Actual Closing Balance" style={{ gridColumn: 'span 4' }}>
+        <PortfolioActualVsPredicted periodGroups={periodGroups} />
+      </Card>
+      <Card title="Direction Accuracy" style={{ gridColumn: 'span 2' }}>
+        <DirectionAccuracyRing allData={allData} />
+      </Card>
+      <Card title="Item MAPE Distribution · how well are items forecast?" style={{ gridColumn: 'span 6' }}>
+        <MapeDistributionChart allData={allData} />
+      </Card>
+      <Card title="MAPE Summary · by period & model" style={{ gridColumn: 'span 6' }}>
+        <ModelAccuracyTable periodGroups={periodGroups} modelLabel={modelLabel} />
+      </Card>
     </div>
   );
 }
@@ -476,15 +708,35 @@ function ItemsTableTab({ data }) {
   const [sortCol, setSortCol] = useState('quantity');
   const [sortDir, setSortDir] = useState('desc');
   const [actionFilter, setActionFilter] = useState('All');
+  const [search, setSearch] = useState('');
+  const [hvOnly, setHvOnly] = useState(false);
+  const [matchFilter, setMatchFilter] = useState('All'); // All | Match | Mismatch
   const PAGE_SIZE = 20;
 
-  const filtered = useMemo(() => actionFilter === 'All' ? data : data.filter(d => d.predictedAction === actionFilter), [data, actionFilter]);
+  const hasActuals = data.some(d => d.actualClosingBal != null);
+  const ac = (a) => a === 'Deliver' ? '#059669' : a === 'Return' ? '#DC2626' : '#D97706';
+  const acBg = (a) => a === 'Deliver' ? 'rgba(5,150,105,.1)' : a === 'Return' ? 'rgba(220,38,38,.08)' : 'rgba(217,119,6,.1)';
+  const fmt = (v) => { if (v == null) return '—'; if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 1 }); return v; };
+  const fmtSigned = (v) => v == null ? '—' : (v > 0 ? '+' : '') + fmt(v);
+
+  const filtered = useMemo(() => {
+    let rows = data;
+    if (actionFilter !== 'All') rows = rows.filter(d => d.predictedAction === actionFilter);
+    if (hvOnly) rows = rows.filter(d => d.isHV);
+    if (matchFilter === 'Match') rows = rows.filter(d => d.directionCorrect === true);
+    if (matchFilter === 'Mismatch') rows = rows.filter(d => d.directionCorrect === false);
+    if (search) {
+      const s = search.toLowerCase();
+      rows = rows.filter(d => d.description?.toLowerCase().includes(s) || d.itemCode?.toLowerCase().includes(s));
+    }
+    return rows;
+  }, [data, actionFilter, hvOnly, matchFilter, search]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
     arr.sort((a, b) => {
       let va = a[sortCol], vb = b[sortCol];
-      if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb||'').toLowerCase(); }
+      if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb || '').toLowerCase(); }
       if (va == null) va = -Infinity; if (vb == null) vb = -Infinity;
       return sortDir === 'asc' ? (va < vb ? -1 : va > vb ? 1 : 0) : (va > vb ? -1 : va < vb ? 1 : 0);
     });
@@ -499,43 +751,90 @@ function ItemsTableTab({ data }) {
     else { setSortCol(col); setSortDir('desc'); }
     setTablePage(0);
   };
-  React.useEffect(() => { setTablePage(0); }, [actionFilter]);
 
-  const fmt = (v) => { if (v == null) return '—'; if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 1 }); return v; };
-  const ac = (a) => a === 'Deliver' ? '#059669' : a === 'Return' ? '#DC2626' : '#D97706';
+  React.useEffect(() => { setTablePage(0); }, [actionFilter, hvOnly, matchFilter, search]);
 
-  // Locked column widths so columns don't shift between pages.
+  // Summary stats for toolbar
+  const matchCount = data.filter(d => d.directionCorrect === true).length;
+  const mismatchCount = data.filter(d => d.directionCorrect === false).length;
+
   const cols = [
-    { col: 'itemCode',            label: 'Code',             width: '8%',  align: 'left' },
-    { col: 'description',         label: 'Item Description', width: '32%', align: 'left' },
-    { col: 'isHV',                label: 'HV',               width: '7%',  align: 'center' },
-    { col: 'predictedAction',     label: 'Action',           width: '12%', align: 'left' },
-    { col: 'prevClosingBal',      label: 'Prev Bal',         width: '10%', align: 'right' },
-    { col: 'predictedClosingBal', label: 'Predicted',        width: '11%', align: 'right' },
-    { col: 'difference',          label: 'Diff',             width: '9%',  align: 'right' },
-    { col: 'quantity',            label: 'Quantity',         width: '11%', align: 'right' },
+    { col: 'description',         label: 'Item',          width: '22%', align: 'left',  sortable: true },
+    { col: 'predictedAction',     label: 'Pred. Action',  width: '9%',  align: 'left',  sortable: true },
+    ...(hasActuals ? [{ col: 'actualAction', label: 'Actual Action', width: '9%', align: 'left', sortable: true }] : []),
+    { col: 'prevClosingBal',      label: 'Prev Bal',      width: '8%',  align: 'right', sortable: true },
+    { col: 'predictedClosingBal', label: 'Pred. Bal',     width: '8%',  align: 'right', sortable: true },
+    ...(hasActuals ? [{ col: 'actualClosingBal', label: 'Actual Bal', width: '8%', align: 'right', sortable: true }] : []),
+    ...(hasActuals ? [{ col: 'error', label: 'Error (Δ)', width: '7%', align: 'right', sortable: true }] : []),
+    ...(hasActuals ? [{ col: '_errPct', label: 'Err %', width: '6%', align: 'right', sortable: false }] : []),
+    { col: 'difference',          label: 'Pred. Δ',       width: '7%',  align: 'right', sortable: true },
+    { col: 'quantity',            label: 'Qty',            width: '6%',  align: 'right', sortable: true },
+    { col: 'itemMape',            label: 'MAPE',           width: '6%',  align: 'right', sortable: true },
   ];
 
+  const thStyle = (h) => ({
+    padding: '9px 10px', textAlign: h.align, fontSize: 10, fontWeight: 600,
+    color: sortCol === h.col ? 'var(--accent)' : 'var(--text-3)',
+    cursor: h.sortable ? 'pointer' : 'default', userSelect: 'none',
+    textTransform: 'uppercase', letterSpacing: '.05em',
+    borderBottom: '2px solid var(--border)', background: '#FAFBFC',
+    whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 1,
+  });
+
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
-      {/* Toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 14, fontWeight: 700 }}>Predicted Line-Items</span>
-          <span style={{ fontSize: 11, color: 'var(--text-3)' }}>· {filtered.length} rows</span>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, gap: 10 }}>
+
+      {/* Toolbar row 1 — search + filters */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+        {/* Search */}
+        <div style={{ position: 'relative', flex: '0 0 220px' }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item…"
+            style={{ width: '100%', padding: '6px 28px 6px 30px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, fontFamily: 'var(--font)', color: 'var(--text)', outline: 'none', background: '#fff', boxSizing: 'border-box' }}
+            onFocus={e => e.target.style.borderColor = 'var(--accent)'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+          <svg style={{ position: 'absolute', left: 9, top: 8, pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          {search && <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 7, top: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 14, lineHeight: 1 }}>×</button>}
         </div>
+
+        {/* Action filter */}
         <div style={{ display: 'flex', background: 'var(--surface-2)', borderRadius: 8, padding: 2, gap: 2 }}>
           {['All', 'Deliver', 'Return', 'No Change'].map(a => (
             <button key={a} onClick={() => setActionFilter(a)} style={{
-              padding: '4px 12px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)',
-              background: actionFilter === a ? '#fff' : 'transparent', color: actionFilter === a ? (a === 'All' ? 'var(--text)' : ac(a)) : 'var(--text-3)',
+              padding: '4px 11px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)',
+              background: actionFilter === a ? '#fff' : 'transparent',
+              color: actionFilter === a ? (a === 'All' ? 'var(--text)' : ac(a)) : 'var(--text-3)',
               boxShadow: actionFilter === a ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
             }}>{a}</button>
           ))}
         </div>
+
+        {/* Direction match filter (only when actuals exist) */}
+        {hasActuals && (
+          <div style={{ display: 'flex', background: 'var(--surface-2)', borderRadius: 8, padding: 2, gap: 2 }}>
+            {[['All','All','var(--text-3)'], ['Match','✓ Match','#059669'], ['Mismatch','✗ Mismatch','#DC2626']].map(([v, l, c]) => (
+              <button key={v} onClick={() => setMatchFilter(v)} style={{
+                padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)',
+                background: matchFilter === v ? '#fff' : 'transparent',
+                color: matchFilter === v ? c : 'var(--text-3)',
+                boxShadow: matchFilter === v ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
+              }}>{l}</button>
+            ))}
+          </div>
+        )}
+
+        {/* HV toggle */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer', color: hvOnly ? 'var(--accent)' : 'var(--text-3)', padding: '5px 10px', border: '1px solid', borderColor: hvOnly ? 'var(--accent)' : 'var(--border)', borderRadius: 6, background: hvOnly ? 'rgba(79,70,229,.06)' : '#fff' }}>
+          <input type="checkbox" checked={hvOnly} onChange={e => setHvOnly(e.target.checked)} style={{ accentColor: 'var(--accent)', margin: 0 }} />
+          HV Only
+        </label>
+
+        {/* Row count + match summary */}
+        <div style={{ marginLeft: 'auto', display: 'flex', align: 'center', gap: 12, fontSize: 11, color: 'var(--text-3)' }}>
+          {hasActuals && <span><span style={{ color: '#059669', fontWeight: 700 }}>{matchCount} ✓</span> · <span style={{ color: '#DC2626', fontWeight: 700 }}>{mismatchCount} ✗</span> direction</span>}
+          <span>{filtered.length} of {data.length} rows</span>
+        </div>
       </div>
 
-      {/* Card with table area + sticky pagination footer */}
+      {/* Table card */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 12, border: '1px solid var(--border)', background: '#fff', minHeight: 0 }}>
         <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed' }}>
@@ -545,45 +844,96 @@ function ItemsTableTab({ data }) {
             <thead>
               <tr>
                 {cols.map(h => (
-                  <th key={h.col} onClick={() => handleSort(h.col)} style={{
-                    padding: '9px 12px', textAlign: h.align, fontSize: 10, fontWeight: 600,
-                    color: sortCol === h.col ? 'var(--accent)' : 'var(--text-3)',
-                    cursor: 'pointer', userSelect: 'none', textTransform: 'uppercase', letterSpacing: '.05em',
-                    borderBottom: '2px solid var(--border)', background: '#FAFBFC', whiteSpace: 'nowrap',
-                    position: 'sticky', top: 0, zIndex: 1,
-                  }}>{h.label}{sortCol === h.col && <span style={{ fontSize: 10, marginLeft: 2 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th key={h.col} onClick={() => h.sortable && handleSort(h.col)} style={thStyle(h)}>
+                    {h.label}{sortCol === h.col && <span style={{ fontSize: 10, marginLeft: 2 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {pageRows.map((row, i) => (
-                <tr key={row.itemCode + i} style={{ borderBottom: '1px solid #F3F4F6' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#FAFBFC'} onMouseLeave={e => e.currentTarget.style.background = ''}>
-                  <td style={{ padding: '8px 12px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.itemCode}</td>
-                  <td style={{ padding: '8px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.description}>{row.description}</td>
-                  <td style={{ padding: '8px 12px', textAlign: 'center' }}>{row.isHV ? <span style={{ color: 'var(--accent)', fontWeight: 700, fontSize: 11 }}>Yes</span> : <span style={{ color: 'var(--text-3)', fontSize: 11 }}>No</span>}</td>
-                  <td style={{ padding: '8px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><span style={{ color: ac(row.predictedAction), fontWeight: 600, fontSize: 11 }}>{row.predictedAction}</span></td>
-                  <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmt(row.prevClosingBal)}</td>
-                  <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmt(row.predictedClosingBal)}</td>
-                  <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: row.difference > 0 ? '#059669' : row.difference < 0 ? '#DC2626' : 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.difference > 0 ? '+' : ''}{fmt(row.difference)}</td>
-                  <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmt(row.quantity)}</td>
-                </tr>
-              ))}
-              {pageRows.length === 0 && <tr><td colSpan={cols.length} style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>No items match the filter</td></tr>}
+              {pageRows.map((row, i) => {
+                const errPct = row.error != null && row.actualClosingBal != null && row.actualClosingBal !== 0 ? (row.error / Math.abs(row.actualClosingBal)) * 100 : null;
+                const mismatch = row.directionCorrect === false;
+                return (
+                  <tr key={row.itemCode + i}
+                    style={{ borderBottom: '1px solid #F3F4F6', background: mismatch ? 'rgba(220,38,38,.03)' : 'transparent' }}
+                    onMouseEnter={e => e.currentTarget.style.background = mismatch ? 'rgba(220,38,38,.06)' : '#F9FAFB'}
+                    onMouseLeave={e => e.currentTarget.style.background = mismatch ? 'rgba(220,38,38,.03)' : 'transparent'}>
+
+                    {/* Item — name + code + HV */}
+                    <td style={{ padding: '7px 10px', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
+                        {row.isHV && <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>★</span>}
+                        <span style={{ fontSize: 11, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.description}>{row.description}</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--mono)', marginTop: 1 }}>{row.itemCode}</div>
+                    </td>
+
+                    {/* Predicted action badge */}
+                    <td style={{ padding: '7px 10px' }}>
+                      <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, color: ac(row.predictedAction), background: acBg(row.predictedAction), whiteSpace: 'nowrap' }}>{row.predictedAction}</span>
+                    </td>
+
+                    {/* Actual action + match indicator */}
+                    {hasActuals && (
+                      <td style={{ padding: '7px 10px' }}>
+                        {row.actualAction ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, color: ac(row.actualAction), background: acBg(row.actualAction), whiteSpace: 'nowrap' }}>{row.actualAction}</span>
+                            <span style={{ fontSize: 12, fontWeight: 800, color: row.directionCorrect ? '#059669' : '#DC2626', flexShrink: 0 }}>{row.directionCorrect ? '✓' : '✗'}</span>
+                          </div>
+                        ) : <span style={{ color: 'var(--text-3)', fontSize: 11 }}>—</span>}
+                      </td>
+                    )}
+
+                    {/* Numeric cols */}
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-3)' }}>{fmt(row.prevClosingBal)}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700 }}>{fmt(row.predictedClosingBal)}</td>
+                    {hasActuals && <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-2)' }}>{row.actualClosingBal != null ? fmt(row.actualClosingBal) : '—'}</td>}
+
+                    {/* Error (absolute) */}
+                    {hasActuals && (
+                      <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: row.error == null ? 'var(--text-3)' : row.error < 0 ? '#DC2626' : '#059669' }}>
+                        {row.error != null ? fmtSigned(row.error) : '—'}
+                      </td>
+                    )}
+
+                    {/* Error % — new column */}
+                    {hasActuals && (
+                      <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: errPct == null ? 'var(--text-3)' : Math.abs(errPct) > 50 ? '#DC2626' : Math.abs(errPct) > 20 ? '#D97706' : '#059669' }}>
+                        {errPct != null ? (errPct > 0 ? '+' : '') + errPct.toFixed(1) + '%' : '—'}
+                      </td>
+                    )}
+
+                    {/* Predicted delta (diff) */}
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: (row.difference||0) > 0 ? '#059669' : (row.difference||0) < 0 ? '#DC2626' : 'var(--text-3)' }}>
+                      {fmtSigned(row.difference)}
+                    </td>
+
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700 }}>{fmt(row.quantity)}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700,
+                      color: row.itemMape == null ? 'var(--text-3)' : row.itemMape > 100 ? '#DC2626' : row.itemMape > 50 ? '#D97706' : '#059669' }}>
+                      {row.itemMape != null ? row.itemMape.toFixed(1) + '%' : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+              {pageRows.length === 0 && <tr><td colSpan={cols.length} style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>No items match the filters</td></tr>}
             </tbody>
           </table>
         </div>
+
+        {/* Pagination footer */}
         <div style={{ display: 'flex', alignItems: 'center', padding: '8px 14px', borderTop: '1px solid var(--border)', background: '#FAFBFC', flexShrink: 0, gap: 8 }}>
-          <div style={{ flex: 1, fontSize: 11, color: 'var(--text-3)', minWidth: 0 }}>
-            Showing {sorted.length === 0 ? 0 : tablePage * PAGE_SIZE + 1}–{Math.min((tablePage + 1) * PAGE_SIZE, sorted.length)} of {sorted.length}
+          <div style={{ flex: 1, fontSize: 11, color: 'var(--text-3)' }}>
+            {sorted.length === 0 ? 'No results' : `${tablePage * PAGE_SIZE + 1}–${Math.min((tablePage + 1) * PAGE_SIZE, sorted.length)} of ${sorted.length}`}
           </div>
           <div style={{ display: 'flex', gap: 4 }}>
             <PgBtn label="←" disabled={tablePage === 0} onClick={() => setTablePage(p => p - 1)} />
-            {(() => { const btns = []; const start = Math.max(0, Math.min(tablePage - 2, totalPages - 5)); const end = Math.min(totalPages, start + 5);
-              for (let i = start; i < end; i++) btns.push(<PgBtn key={i} label={i + 1} active={i === tablePage} onClick={() => setTablePage(i)} />); return btns; })()}
+            {(() => { const btns = []; const start = Math.max(0, Math.min(tablePage - 2, totalPages - 5)); const end = Math.min(totalPages, start + 5); for (let i = start; i < end; i++) btns.push(<PgBtn key={i} label={i + 1} active={i === tablePage} onClick={() => setTablePage(i)} />); return btns; })()}
             <PgBtn label="→" disabled={tablePage >= totalPages - 1} onClick={() => setTablePage(p => p + 1)} />
           </div>
-          <div style={{ flex: 1 }}></div>
+          <div style={{ flex: 1 }} />
         </div>
       </div>
     </div>

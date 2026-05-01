@@ -62,6 +62,19 @@ function ItemExplorerPage({ allData, period }) {
 
       // Scoped stats
       const totalQty = inScope.reduce((s, d) => s + (d.quantity || 0), 0);
+      // MAPE: average of non-null itemMape values across scoped records
+      const mapeVals = inScope.map(d => d.itemMape).filter(v => v != null);
+      const avgMape = mapeVals.length ? mapeVals.reduce((s, v) => s + v, 0) / mapeVals.length : null;
+      // Error: latest error value (actualClosingBal - predictedClosingBal) if available
+      const latestWithActual = [...inScope].reverse().find(d => d.actualClosingBal != null);
+      const latestError = latestWithActual ? latestWithActual.error : null;
+      const latestActualBal = latestWithActual ? latestWithActual.actualClosingBal : null;
+      // Error %: signed percentage of actual balance (positive = over-predicted, negative = under-predicted)
+      const latestErrorPct = (latestError != null && latestActualBal != null && latestActualBal !== 0)
+        ? (latestError / latestActualBal) * 100 : null;
+      // Direction correct rate
+      const scopedWithActual = inScope.filter(d => d.directionCorrect != null);
+      const dirCorrectRate = scopedWithActual.length ? scopedWithActual.filter(d => d.directionCorrect).length / scopedWithActual.length : null;
       const scopedActs = inScope.map(d => d.predictedAction);
       const scopedFlips = scopedActs.reduce((s, a, i) => s + (i > 0 && a !== scopedActs[i-1] ? 1 : 0), 0);
       // Streak: count of last consecutive same action in scope
@@ -99,6 +112,11 @@ function ItemExplorerPage({ allData, period }) {
         fullTotal,
         all: it.all,
         inScope,
+        avgMape,
+        latestError,
+        latestErrorPct,
+        latestActualBal,
+        dirCorrectRate,
       };
     });
   }, [allData, scopedPeriods]);
@@ -114,7 +132,7 @@ function ItemExplorerPage({ allData, period }) {
 
   const filtered = React.useMemo(() => {
     let rows = itemSummaries;
-    if (search) { const s = search.toLowerCase(); rows = rows.filter(d => d.description.toLowerCase().includes(s) || d.itemCode.toLowerCase().includes(s)); }
+    if (search) { const s = search.toLowerCase(); rows = rows.filter(d => (d.description || '').toLowerCase().includes(s) || (d.itemCode || '').toLowerCase().includes(s)); }
     if (hvFilter === 'HV') rows = rows.filter(d => d.isHV);
     else if (hvFilter === 'Standard') rows = rows.filter(d => !d.isHV);
     if (cohort !== 'all') rows = rows.filter(d => d.cohort === cohort);
@@ -229,48 +247,118 @@ function ItemExplorerPage({ allData, period }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr>
-                  <th style={{ ...thStyle('itemCode'), width: 70 }} onClick={() => handleSort('itemCode')}>Code</th>
-                  <th style={{ ...thStyle('description'), minWidth: 160 }} onClick={() => handleSort('description')}>Description</th>
-                  <th style={thStyle('cohort')} onClick={() => handleSort('cohort')}>Cohort</th>
-                  <th style={thStyle()}>ABC</th>
-                  <th style={thStyle('latestAction')} onClick={() => handleSort('latestAction')}>Latest</th>
-                  <th style={{ ...thStyle('latestBal', 'right') }} onClick={() => handleSort('latestBal')}>Pred Bal</th>
-                  <th style={thStyle()}>Streak</th>
-                  <th style={{ ...thStyle('totalQty', 'right') }} onClick={() => handleSort('totalQty')}>Qty in Scope</th>
-                  <th style={{ ...thStyle('volatility', 'right') }} onClick={() => handleSort('volatility')}>Volatility</th>
+                  <th style={{ ...thStyle('description'), minWidth: 180, position: 'sticky', left: 0, zIndex: 3, background: '#FAFBFC', boxShadow: '2px 0 4px rgba(0,0,0,.06)' }} onClick={() => handleSort('description')}>Item</th>
+                  <th style={{ ...thStyle(null), width: 36, textAlign: 'center' }}>ABC</th>
+                  <th style={thStyle('cohort')} onClick={() => handleSort('cohort')}>Behavior</th>
+                  <th style={thStyle('latestAction')} onClick={() => handleSort('latestAction')}>Action</th>
+                  <th style={{ ...thStyle('latestBal', 'right'), minWidth: 110 }} onClick={() => handleSort('latestBal')}>Balance</th>
+                  <th style={{ ...thStyle('avgMape', 'right'), minWidth: 100 }} onClick={() => handleSort('avgMape')}>Accuracy</th>
+                  <th style={{ ...thStyle('dirCorrectRate', 'right'), minWidth: 72 }} onClick={() => handleSort('dirCorrectRate')}>Dir. Match</th>
+                  <th style={{ ...thStyle(null), minWidth: 72, textAlign: 'right' }}>Trend</th>
+                  <th style={{ ...thStyle('totalQty', 'right') }} onClick={() => handleSort('totalQty')}>Movement</th>
+                  <th style={{ ...thStyle('volatility', 'right'), minWidth: 96 }} onClick={() => handleSort('volatility')}>Volatility</th>
                 </tr>
               </thead>
               <tbody>
                 {pageRows.map(row => {
                   const isSel = selectedCode === row.itemCode;
                   const cohortMeta = cohorts.find(c => c.id === row.cohort);
+                  const cls = abcByCode[row.itemCode];
+                  const clsCol = cls === 'A' ? '#059669' : cls === 'B' ? '#D97706' : '#9CA3AF';
+                  const mapeCol = row.avgMape == null ? 'var(--text-3)' : row.avgMape > 100 ? '#DC2626' : row.avgMape > 50 ? '#D97706' : '#059669';
+                  const errCol = row.latestErrorPct == null ? 'var(--text-3)' : Math.abs(row.latestErrorPct) > 50 ? '#DC2626' : Math.abs(row.latestErrorPct) > 20 ? '#D97706' : '#059669';
+                  const balNeg = row.latestBal != null && row.latestBal <= 0;
+                  const dirPct = row.dirCorrectRate != null ? Math.round(row.dirCorrectRate * 100) : null;
+                  const dirCol = dirPct == null ? 'var(--text-3)' : dirPct >= 80 ? '#059669' : dirPct >= 60 ? '#D97706' : '#DC2626';
                   return (
                     <tr key={row.itemCode} onClick={() => setSelectedCode(isSel ? null : row.itemCode)}
                       style={{ cursor: 'pointer', borderBottom: '1px solid #F3F4F6', background: isSel ? 'rgba(79,70,229,.05)' : 'transparent' }}
-                      onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = '#FAFBFC'; }}
+                      onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = '#F9FAFB'; }}
                       onMouseLeave={e => { e.currentTarget.style.background = isSel ? 'rgba(79,70,229,.05)' : 'transparent'; }}>
-                      <td style={{ padding: '7px 10px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-2)' }}>{row.itemCode}</td>
-                      <td style={{ padding: '7px 10px', fontWeight: 450, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {row.isHV && <span style={{ color: 'var(--accent)', fontWeight: 700, marginRight: 4 }}>★</span>}
-                        {row.description}
+
+                      {/* Item: name + code + HV */}
+                      <td style={{ padding: '8px 10px', maxWidth: 220, position: 'sticky', left: 0, zIndex: 1, background: isSel ? 'rgba(79,70,229,.05)' : '#fff', boxShadow: '2px 0 4px rgba(0,0,0,.06)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
+                          {row.isHV && <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>★</span>}
+                          <span style={{ fontWeight: 550, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.description}>{row.description}</span>
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--mono)', marginTop: 1 }}>{row.itemCode}</div>
                       </td>
-                      <td style={{ padding: '7px 10px' }}>
-                        <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: cohortMeta?.color, background: (cohortMeta?.color || '#888') + '14' }}>{cohortMeta?.label}</span>
+
+                      {/* ABC badge */}
+                      <td style={{ padding: '8px 6px', textAlign: 'center' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: 5, background: clsCol, color: '#fff', fontSize: 10, fontWeight: 800 }}>{cls}</span>
                       </td>
-                      <td style={{ padding: '7px 10px' }}>
-                        {(() => { const cls = abcByCode[row.itemCode]; const col = cls === 'A' ? '#059669' : cls === 'B' ? '#D97706' : '#9CA3AF'; return <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 4, background: col, color: '#fff', fontSize: 10, fontWeight: 800 }}>{cls}</span>; })()}
+
+                      {/* Behavior / cohort */}
+                      <td style={{ padding: '8px 10px' }}>
+                        <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: cohortMeta?.color, background: (cohortMeta?.color || '#888') + '14', whiteSpace: 'nowrap' }}>{cohortMeta?.label}</span>
                       </td>
-                      <td style={{ padding: '7px 10px' }}>{row.latestAction ? <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 600, color: ac(row.latestAction), background: abg(row.latestAction) }}>{row.latestAction}</span> : <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
-                      <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: row.latestBal != null && row.latestBal <= 0 ? '#DC2626' : 'var(--text)' }}>{fmt(row.latestBal)}</td>
-                      <td style={{ padding: '7px 10px', fontFamily: 'var(--mono)', fontSize: 11 }}>{row.streak > 1 ? <span style={{ color: ac(row.streakAction), fontWeight: 700 }}>{row.streak}×</span> : <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
-                      <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700 }}>{fmt(row.totalQty)}</td>
-                      <td style={{ padding: '7px 10px', textAlign: 'right' }}>
+
+                      {/* Latest action */}
+                      <td style={{ padding: '8px 10px' }}>
+                        {row.latestAction
+                          ? <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 600, color: ac(row.latestAction), background: abg(row.latestAction), whiteSpace: 'nowrap' }}>{row.latestAction}</span>
+                          : <span style={{ color: 'var(--text-3)' }}>—</span>}
+                        {row.streak > 1 && <span style={{ marginLeft: 5, fontSize: 9, color: ac(row.streakAction), fontWeight: 700, fontFamily: 'var(--mono)' }}>{row.streak}×</span>}
+                      </td>
+
+                      {/* Balance: predicted + actual below */}
+                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: balNeg ? '#DC2626' : 'var(--text)' }}>
+                          {fmt(row.latestBal)}
+                        </div>
+                        {row.latestActualBal != null && (
+                          <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--mono)', marginTop: 1 }}>
+                            act {fmt(row.latestActualBal)}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Accuracy: MAPE + Error% below */}
+                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: mapeCol }}>
+                          {row.avgMape != null ? row.avgMape.toFixed(1) + '%' : '—'}
+                          <span style={{ fontWeight: 400, fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font)', marginLeft: 2 }}>MAPE</span>
+                        </div>
+                        {row.latestErrorPct != null && (
+                          <div style={{ fontSize: 10, fontFamily: 'var(--mono)', color: errCol, marginTop: 1 }}>
+                            {row.latestErrorPct > 0 ? '+' : ''}{row.latestErrorPct.toFixed(1)}% err
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Direction match */}
+                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                        {dirPct != null ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: dirCol }}>{dirPct}%</span>
+                            <div style={{ width: 40, height: 3, background: '#F3F4F6', borderRadius: 2, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${dirPct}%`, background: dirCol, borderRadius: 2 }} />
+                            </div>
+                          </div>
+                        ) : <span style={{ color: 'var(--text-3)' }}>—</span>}
+                      </td>
+
+                      {/* Trend sparkline */}
+                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4, alignItems: 'center' }}>
+                          <MiniSparkline data={row.all} />
+                          <MiniActionDots data={row.all} ac={ac} />
+                        </div>
+                      </td>
+
+                      {/* Movement qty */}
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>{fmt(row.totalQty)}</td>
+
+                      {/* Volatility */}
+                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                         <VolatilityBar value={row.volatility} />
                       </td>
                     </tr>
                   );
                 })}
-                {pageRows.length === 0 && <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>No items match filters</td></tr>}
+                {pageRows.length === 0 && <tr><td colSpan={10} style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>No items match filters</td></tr>}
               </tbody>
             </table>
           </div>
@@ -303,23 +391,49 @@ function ItemExplorerPage({ allData, period }) {
 /* ===== Rich Detail Panel ===== */
 function RichDetailPanel({ item, abc, onClose, ac, abg, fmt, cohortMeta }) {
   const series = item.all;
-  const max = Math.max(...series.flatMap(p => [p.prevClosingBal || 0, p.predictedClosingBal || 0]), 1);
-  const w = 354, h = 110, padL = 4, padR = 4, padT = 8, padB = 22;
+  const fmtPeriod = p => {
+    if (!p) return '';
+    const mM = p.match(/^(\d{4})-(\d{2})$/);
+    if (mM) { const ns = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${ns[parseInt(mM[2])-1]} '${mM[1].slice(2)}`; }
+    const qM = p.match(/^(\d{4})-Q(\d)$/); if (qM) return `Q${qM[2]} '${qM[1].slice(2)}`;
+    const hM = p.match(/^(\d{4})-H(\d)$/); if (hM) return `H${hM[2]} '${hM[1].slice(2)}`;
+    return p;
+  };
+  const fmtK = v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : Math.round(v).toLocaleString();
+
+  // Chart dimensions with generous left padding for Y-axis labels
+  const w = 352, h = 150, padL = 46, padR = 8, padT = 12, padB = 32;
   const cW = w - padL - padR, cH = h - padT - padB;
-  const x = (i) => padL + (series.length === 1 ? cW / 2 : (i / (series.length - 1)) * cW);
-  const y = (v) => padT + cH - (v / max) * cH;
-  const path = series.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i)} ${y(p.predictedClosingBal || 0)}`).join(' ');
-  const area = path + ` L ${x(series.length - 1)} ${padT + cH} L ${x(0)} ${padT + cH} Z`;
+  const maxVal = Math.max(...series.flatMap(p => [p.prevClosingBal || 0, p.predictedClosingBal || 0, p.actualClosingBal || 0]), 1);
+  const minVal = Math.min(...series.flatMap(p => [p.predictedClosingBal || 0, p.actualClosingBal || 0].filter(v => v != null)), 0);
+  const range = maxVal - minVal || 1;
+  const cx = i => padL + (series.length === 1 ? cW / 2 : (i / (series.length - 1)) * cW);
+  const cy = v => padT + cH - ((v - minVal) / range) * cH;
+  const predPath = series.map((p, i) => `${i === 0 ? 'M' : 'L'} ${cx(i).toFixed(1)} ${cy(p.predictedClosingBal || 0).toFixed(1)}`).join(' ');
+  const area = predPath + ` L ${cx(series.length - 1).toFixed(1)} ${(padT + cH).toFixed(1)} L ${cx(0).toFixed(1)} ${(padT + cH).toFixed(1)} Z`;
+  const hasActuals = series.some(p => p.actualClosingBal != null);
+  const actualPath = series.filter(p => p.actualClosingBal != null).map((p, i, arr) => {
+    const origIdx = series.indexOf(p);
+    return `${i === 0 ? 'M' : 'L'} ${cx(origIdx).toFixed(1)} ${cy(p.actualClosingBal).toFixed(1)}`;
+  }).join(' ');
+
+  // Y-axis ticks: 4 levels
+  const yTicks = [0, 0.33, 0.67, 1].map(t => ({ pct: t, val: minVal + t * range }));
+
+  // X-axis: show first, mid-ish, last — adaptive
+  const xLabels = series.reduce((acc, p, i) => {
+    if (i === 0 || i === series.length - 1 || (series.length > 4 && i === Math.floor(series.length / 2))) acc.push(i);
+    return acc;
+  }, []);
 
   // Action ribbon
-  const ribbonW = 354, ribbonH = 22;
-  const cellW = ribbonW / series.length;
+  const ribbonH = 24;
+  const cellW = w / series.length;
 
-  // Summary stats
+  // Stats
   const totalMoved = series.reduce((s, d) => s + (d.quantity || 0), 0);
   const acts = series.map(d => d.predictedAction);
   const flips = acts.reduce((s, a, i) => s + (i > 0 && a !== acts[i-1] ? 1 : 0), 0);
-  // Longest streak
   let longestStreak = 1, longestAction = acts[0], cur = 1;
   for (let i = 1; i < acts.length; i++) {
     if (acts[i] === acts[i-1]) { cur++; if (cur > longestStreak) { longestStreak = cur; longestAction = acts[i]; } }
@@ -328,8 +442,6 @@ function RichDetailPanel({ item, abc, onClose, ac, abg, fmt, cohortMeta }) {
   const counts = { Deliver: 0, Return: 0, 'No Change': 0 };
   acts.forEach(a => { if (counts[a] != null) counts[a]++; });
   const predominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-
-  const fmtPeriod = p => { const [y, m] = p.split('-'); const names = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[parseInt(m)]} '${y.slice(2)}`; };
 
   return (
     <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -349,51 +461,110 @@ function RichDetailPanel({ item, abc, onClose, ac, abg, fmt, cohortMeta }) {
         {abc && (() => { const col = abc === 'A' ? '#059669' : abc === 'B' ? '#D97706' : '#9CA3AF'; return <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 600, color: col, background: col + '14' }}>Class {abc}</span>; })()}
       </div>
 
-      {/* Trajectory */}
+      {/* Closing Balance trajectory */}
       <div>
-        <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: 'var(--text-2)' }}>Closing Balance · {series.length} periods</div>
-        <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
-          {[0,.25,.5,.75,1].map((p,i) => { const yy = padT + cH - cH * p; return <line key={i} x1={padL} y1={yy} x2={w-padR} y2={yy} stroke="#F3F4F6" />; })}
-          <defs><linearGradient id={`grad-${item.itemCode}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--accent)" stopOpacity=".25" /><stop offset="100%" stopColor="var(--accent)" stopOpacity="0" /></linearGradient></defs>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-2)' }}>Closing Balance · {series.length} period{series.length === 1 ? '' : 's'}</span>
+          {hasActuals && (
+            <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--text-3)' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 12, height: 2, background: 'var(--accent)', display: 'inline-block', borderRadius: 1 }}></span>Predicted</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 12, height: 2, background: '#F59E0B', display: 'inline-block', borderRadius: 1, borderTop: '2px dashed #F59E0B' }}></span>Actual</span>
+            </div>
+          )}
+        </div>
+        <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block', overflow: 'visible' }}>
+          {/* Y-axis grid lines + labels */}
+          {yTicks.map((t, i) => {
+            const yy = cy(t.val);
+            return (
+              <g key={i}>
+                <line x1={padL} y1={yy} x2={w - padR} y2={yy} stroke="#F0F1F3" strokeDasharray={i === 0 ? '' : '3,3'} />
+                <text x={padL - 5} y={yy + 3.5} textAnchor="end" fontSize="10" fill="#9CA3AF" fontFamily="var(--mono)">{fmtK(t.val)}</text>
+              </g>
+            );
+          })}
+          {/* Y-axis line */}
+          <line x1={padL} y1={padT} x2={padL} y2={padT + cH} stroke="#E5E7EB" />
+          {/* Gradient area + predicted line */}
+          <defs><linearGradient id={`grad-${item.itemCode}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--accent)" stopOpacity=".18" /><stop offset="100%" stopColor="var(--accent)" stopOpacity="0" /></linearGradient></defs>
           <path d={area} fill={`url(#grad-${item.itemCode})`} />
-          <path d={path} fill="none" stroke="var(--accent)" strokeWidth={1.6} />
-          {series.map((p, i) => i === 0 || i === series.length - 1 || i % Math.max(Math.floor(series.length / 6), 1) === 0 ? (
-            <g key={i}>
-              <circle cx={x(i)} cy={y(p.predictedClosingBal || 0)} r={2} fill="var(--accent)" />
-              <text x={x(i)} y={padT + cH + 14} textAnchor="middle" fontSize="8" fill="var(--text-3)" fontFamily="var(--mono)">{p.period.slice(2, 7)}</text>
-            </g>
-          ) : null)}
-          <text x={padL + 2} y={padT + 8} fontSize="8" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(max).toLocaleString()}</text>
+          <path d={predPath} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          {/* Actual line (dashed amber) */}
+          {hasActuals && actualPath && <path d={actualPath} fill="none" stroke="#F59E0B" strokeWidth={1.8} strokeDasharray="4,3" strokeLinejoin="round" />}
+          {/* Data points + X-axis labels */}
+          {series.map((p, i) => {
+            const showLabel = xLabels.includes(i);
+            const anchor = i === 0 ? 'start' : i === series.length - 1 ? 'end' : 'middle';
+            return (
+              <g key={i}>
+                <circle cx={cx(i)} cy={cy(p.predictedClosingBal || 0)} r={2.5} fill="var(--accent)" />
+                {p.actualClosingBal != null && <circle cx={cx(i)} cy={cy(p.actualClosingBal)} r={2.5} fill="#F59E0B" />}
+                {showLabel && (
+                  <text x={cx(i)} y={padT + cH + 18} textAnchor={anchor} fontSize="10" fill="#9CA3AF" fontFamily="var(--mono)">{fmtPeriod(p.period)}</text>
+                )}
+              </g>
+            );
+          })}
         </svg>
       </div>
 
       {/* Action ribbon */}
       <div>
-        <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: 'var(--text-2)' }}>Action History · D=Deliver · R=Return · ·=No Change</div>
-        <svg width="100%" height={ribbonH} viewBox={`0 0 ${ribbonW} ${ribbonH}`} style={{ display: 'block' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: 'var(--text-2)' }}>Action History</div>
+        <svg width="100%" height={ribbonH} viewBox={`0 0 ${w} ${ribbonH}`} style={{ display: 'block' }}>
           {series.map((p, i) => {
             const xp = i * cellW;
             const a = p.predictedAction;
-            const letter = a === 'Deliver' ? 'D' : a === 'Return' ? 'R' : '·';
-            return <g key={p.period}>
-              <rect x={xp + 0.5} y={0} width={Math.max(cellW - 1, 1)} height={ribbonH} fill={ac(a)} opacity={a === 'No Change' ? .35 : .82} rx={1.5} />
-              {cellW >= 14 && <text x={xp + cellW / 2} y={ribbonH / 2 + 4} textAnchor="middle" fontSize="10" fontWeight="700" fill="#fff">{letter}</text>}
-            </g>;
+            const letter = a === 'Deliver' ? 'D' : a === 'Return' ? 'R' : 'N';
+            return (
+              <g key={p.period} title={`${fmtPeriod(p.period)}: ${a}`}>
+                <rect x={xp + 0.5} y={0} width={Math.max(cellW - 1, 1)} height={ribbonH} fill={ac(a)} opacity={a === 'No Change' ? .3 : .85} rx={2} />
+                {cellW >= 16 && <text x={xp + cellW / 2} y={ribbonH / 2 + 4} textAnchor="middle" fontSize="11" fontWeight="700" fill="#fff">{letter}</text>}
+              </g>
+            );
           })}
         </svg>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--mono)', marginTop: 3 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--mono)', marginTop: 4 }}>
           <span>{fmtPeriod(series[0].period)}</span>
           {series.length > 4 && <span>{fmtPeriod(series[Math.floor(series.length / 2)].period)}</span>}
           <span>{fmtPeriod(series[series.length - 1].period)}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 12, marginTop: 5, fontSize: 10, color: 'var(--text-3)' }}>
+          {[['D','Deliver','#059669'],['R','Return','#DC2626'],['N','No Change','#D97706']].map(([l,lbl,col]) => (
+            <span key={l} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: 14, height: 14, borderRadius: 3, background: col, opacity: .85, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: '#fff' }}>{l}</span>
+              {lbl}
+            </span>
+          ))}
         </div>
       </div>
 
       {/* Stats grid */}
       <div style={{ borderTop: '1px solid #F3F4F6', paddingTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 11 }}>
-        <DetailStat label="Total Moved" value={Math.round(totalMoved).toLocaleString()} hint="all periods" />
-        <DetailStat label="Action Flips" value={flips} hint={`in ${series.length} periods`} />
+        <DetailStat label="Total Moved" value={fmtK(totalMoved)} hint="across all periods" />
+        <DetailStat label="Direction Changes" value={flips} hint={`in ${series.length} period${series.length === 1 ? '' : 's'}`} />
         <DetailStat label="Longest Streak" value={`${longestStreak}×`} hint={longestAction} hintColor={ac(longestAction)} />
-        <DetailStat label="Predominant" value={predominant[0]} valueColor={ac(predominant[0])} hint={`${Math.round(predominant[1] / acts.length * 100)}% of time`} />
+        <DetailStat label="Predominant Action" value={predominant[0]} valueColor={ac(predominant[0])} hint={`${Math.round(predominant[1] / acts.length * 100)}% of time`} />
+        {(() => {
+          const mapeVals = series.map(p => p.itemMape).filter(v => v != null);
+          const avgMape = mapeVals.length ? (mapeVals.reduce((s, v) => s + v, 0) / mapeVals.length).toFixed(1) + '%' : '—';
+          const mapeColor = mapeVals.length ? (parseFloat(avgMape) > 100 ? '#DC2626' : parseFloat(avgMape) > 50 ? '#D97706' : '#059669') : undefined;
+          const lastWithActual = [...series].reverse().find(p => p.actualClosingBal != null);
+          const errVal = lastWithActual?.error;
+          const errPct = (errVal != null && lastWithActual.actualClosingBal != null && lastWithActual.actualClosingBal !== 0)
+            ? (errVal / lastWithActual.actualClosingBal) * 100 : null;
+          const errPctColor = errPct == null ? undefined : Math.abs(errPct) > 50 ? '#DC2626' : Math.abs(errPct) > 20 ? '#D97706' : '#059669';
+          return (<>
+            <DetailStat label="Avg MAPE" value={avgMape} valueColor={mapeColor} hint={mapeVals.length ? `${mapeVals.length} periods with actuals` : 'no actuals yet'} />
+            <DetailStat label="Error %" value={errPct != null ? (errPct > 0 ? '+' : '') + errPct.toFixed(1) + '%' : '—'} valueColor={errPctColor} hint={lastWithActual ? `actual: ${Math.round(lastWithActual.actualClosingBal).toLocaleString()}` : 'no actuals yet'} />
+          </>);
+        })()}
+        {(() => {
+          const withActual = series.filter(p => p.directionCorrect != null);
+          const dirRate = withActual.length ? Math.round(withActual.filter(p => p.directionCorrect).length / withActual.length * 100) : null;
+          const dirCol = dirRate == null ? undefined : dirRate >= 80 ? '#059669' : dirRate >= 60 ? '#D97706' : '#DC2626';
+          return <DetailStat label="Dir. Match" value={dirRate != null ? dirRate + '%' : '—'} valueColor={dirCol} hint={withActual.length ? `${withActual.length} periods w/ actuals` : 'no actuals yet'} />;
+        })()}
         <DetailStat label="First Activity" value={fmtPeriod(series[0].period)} hint="" />
         <DetailStat label="Latest Period" value={fmtPeriod(series[series.length - 1].period)} hint="" />
       </div>
@@ -404,9 +575,9 @@ function RichDetailPanel({ item, abc, onClose, ac, abg, fmt, cohortMeta }) {
 function DetailStat({ label, value, valueColor, hint, hintColor }) {
   return (
     <div style={{ background: '#FAFBFC', borderRadius: 7, padding: '7px 10px' }}>
-      <div style={{ fontSize: 9, color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+      <div style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 800, fontFamily: 'var(--mono)', color: valueColor || 'var(--text)', marginTop: 1 }}>{value}</div>
-      {hint && <div style={{ fontSize: 9, color: hintColor || 'var(--text-3)', fontWeight: 500, marginTop: 1 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 10, color: hintColor || 'var(--text-3)', fontWeight: 500, marginTop: 1 }}>{hint}</div>}
     </div>
   );
 }
@@ -494,7 +665,13 @@ function ScopePicker({ value, onChange, singlePeriod, onSinglePeriodChange, allP
     const fn = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', fn); return () => document.removeEventListener('mousedown', fn);
   }, []);
-  const fmt = p => { const [y, m] = p.split('-'); const names = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[parseInt(m)]} ${y}`; };
+  const fmt = p => {
+    if (!p) return '';
+    const mM = p.match(/^(\d{4})-(\d{2})$/); if (mM) { const ns = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${ns[parseInt(mM[2])-1]} ${mM[1]}`; }
+    const qM = p.match(/^(\d{4})-Q(\d)$/); if (qM) return `Q${qM[2]} ${qM[1]}`;
+    const hM = p.match(/^(\d{4})-H(\d)$/); if (hM) return `H${hM[2]} ${hM[1]}`;
+    return p;
+  };
   const labels = {
     all: `All ${totalPeriods} periods`,
     last12: 'Last 12 months',
@@ -525,6 +702,44 @@ function ScopePicker({ value, onChange, singlePeriod, onSinglePeriodChange, allP
           </div>
         )}
       </div>}
+    </div>
+  );
+}
+
+/* ===== Mini Sparkline (last 8 periods predicted closing balance) ===== */
+function MiniSparkline({ data, w = 52, h = 18 }) {
+  const last8 = (data || []).slice(-8);
+  if (last8.length < 2) return null;
+  const vals = last8.map(d => d.predictedClosingBal || 0);
+  const min = Math.min(...vals, 0);
+  const max = Math.max(...vals, min + 1);
+  const range = max - min;
+  const px = i => (i / (last8.length - 1)) * w;
+  const py = v => h - 2 - ((v - min) / range) * (h - 4);
+  const pts = last8.map((d, i) => `${px(i).toFixed(1)},${py(d.predictedClosingBal || 0).toFixed(1)}`).join(' ');
+  const last = vals[vals.length - 1];
+  const prev = vals[vals.length - 2];
+  const color = last > prev * 1.01 ? '#059669' : last < prev * 0.99 ? '#DC2626' : '#D97706';
+  const lx = px(last8.length - 1);
+  const ly = py(last);
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block', flexShrink: 0 }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={lx.toFixed(1)} cy={ly.toFixed(1)} r="2" fill={color} />
+    </svg>
+  );
+}
+
+/* ===== Mini Action Dots (last 6 periods' actions as colored squares) ===== */
+function MiniActionDots({ data, ac }) {
+  const last6 = (data || []).slice(-6);
+  if (!last6.length) return null;
+  return (
+    <div style={{ display: 'flex', gap: 2, alignItems: 'center', flexShrink: 0 }}>
+      {last6.map((d, i) => (
+        <div key={i} title={`${d.period}: ${d.predictedAction}`}
+          style={{ width: 5, height: 10, borderRadius: 1.5, background: ac(d.predictedAction), opacity: 0.5 + 0.5 * (i / (last6.length - 1 || 1)) }} />
+      ))}
     </div>
   );
 }
