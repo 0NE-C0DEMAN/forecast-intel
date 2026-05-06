@@ -12,6 +12,28 @@ function ItemExplorerPage({ allData, period }) {
   const [page, setPage] = React.useState(0);
   const PAGE_SIZE = 18;
 
+  // Track horizontal scroll on the table so the sticky Item column can
+  // extend its visible occlusion when scrolled. Without this, partial
+  // content from columns sliding under the sticky cell bleeds out past
+  // the cell's right edge (visible to the right of the frozen column).
+  const tableScrollerRef = React.useRef(null);
+  const [tableScrolled, setTableScrolled] = React.useState(false);
+  React.useEffect(() => {
+    const el = tableScrollerRef.current;
+    if (!el) return;
+    let raf = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => setTableScrolled(el.scrollLeft > 0));
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => { el.removeEventListener('scroll', onScroll); cancelAnimationFrame(raf); };
+  }, []);
+  // Solid color extends the sticky cell's apparent right edge by this much when
+  // the table is scrolled, masking partial content from columns that slide under
+  // the frozen column. 40px covers ABC (42px) entirely + most of Behavior bleed.
+  const STICKY_MASK = 40;
+
   React.useEffect(() => { setSinglePeriod(period); }, [period]);
   React.useEffect(() => { setPage(0); }, [search, hvFilter, cohort, scope, singlePeriod, sortCol, sortDir]);
 
@@ -243,11 +265,28 @@ function ItemExplorerPage({ allData, period }) {
       {/* Body: table + side panel */}
       <div style={{ flex: 1, display: 'flex', gap: 12, overflow: 'hidden', paddingBottom: 14 }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#fff', border: '1px solid var(--border)', borderRadius: 12 }}>
-          <div style={{ flex: 1, overflow: 'auto' }}>
+          <div ref={tableScrollerRef} style={{ flex: 1, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr>
-                  <th style={{ ...thStyle('description'), minWidth: 180, position: 'sticky', left: 0, zIndex: 3, background: '#FAFBFC', boxShadow: '2px 0 4px rgba(0,0,0,.06)' }} onClick={() => handleSort('description')}>Item</th>
+                  <th style={{
+                    ...thStyle('description'), minWidth: 180,
+                    position: 'sticky', left: 0, zIndex: 3,
+                    background: '#FAFBFC',
+                    boxShadow: tableScrolled ? '2px 0 6px rgba(0,0,0,.10)' : '2px 0 4px rgba(0,0,0,.06)',
+                  }} onClick={() => handleSort('description')}>
+                    {/* Solid mask absolutely-positioned past the cell's right edge.
+                        Inside the sticky stacking context (zIndex:3), so it occludes
+                        partial content from columns that slide under during scroll.
+                        Box-shadow doesn't reliably do this in border-collapse tables. */}
+                    {tableScrolled && (
+                      <div style={{
+                        position: 'absolute', top: 0, bottom: 0, left: '100%',
+                        width: STICKY_MASK, background: '#FAFBFC', pointerEvents: 'none',
+                      }} />
+                    )}
+                    Item
+                  </th>
                   <th style={{ ...thStyle(null), width: 36, textAlign: 'center' }}>ABC</th>
                   <th style={thStyle('cohort')} onClick={() => handleSort('cohort')}>Behavior</th>
                   <th style={thStyle('latestAction')} onClick={() => handleSort('latestAction')}>Action</th>
@@ -273,11 +312,56 @@ function ItemExplorerPage({ allData, period }) {
                   return (
                     <tr key={row.itemCode} onClick={() => setSelectedCode(isSel ? null : row.itemCode)}
                       style={{ cursor: 'pointer', borderBottom: '1px solid #F3F4F6', background: isSel ? 'rgba(79,70,229,.05)' : 'transparent' }}
-                      onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = '#F9FAFB'; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = isSel ? 'rgba(79,70,229,.05)' : 'transparent'; }}>
+                      onMouseEnter={e => {
+                        if (isSel) return;
+                        e.currentTarget.style.background = '#F9FAFB';
+                        // Keep sticky first cell + its right-side mask in sync with the
+                        // row's hover bg so it doesn't render as a white strip against
+                        // the hovered row.
+                        const stickyTd = e.currentTarget.querySelector('td');
+                        if (stickyTd) {
+                          stickyTd.style.background = '#F9FAFB';
+                          const mask = stickyTd.firstElementChild;
+                          if (mask && mask.style.position === 'absolute') {
+                            mask.style.background = '#F9FAFB';
+                          }
+                        }
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.background = isSel ? 'rgba(79,70,229,.05)' : 'transparent';
+                        const stickyTd = e.currentTarget.querySelector('td');
+                        if (stickyTd) {
+                          const bg = isSel ? '#F6F6FE' : '#FFFFFF';
+                          stickyTd.style.background = bg;
+                          const mask = stickyTd.firstElementChild;
+                          if (mask && mask.style.position === 'absolute') {
+                            mask.style.background = bg;
+                          }
+                        }
+                      }}>
 
-                      {/* Item: name + code + HV */}
-                      <td style={{ padding: '8px 10px', maxWidth: 220, position: 'sticky', left: 0, zIndex: 1, background: isSel ? 'rgba(79,70,229,.05)' : '#fff', boxShadow: '2px 0 4px rgba(0,0,0,.06)' }}>
+                      {/* Item: name + code + HV — sticky frozen column.
+                          Background MUST be opaque so other cells don't bleed through
+                          when the user scrolls horizontally. #F6F6FE is the opaque
+                          equivalent of rgba(79,70,229,.05) flattened over white,
+                          matching the selected-row tint exactly. */}
+                      <td style={{
+                        padding: '8px 10px', maxWidth: 220,
+                        position: 'sticky', left: 0, zIndex: 2,
+                        background: isSel ? '#F6F6FE' : '#FFFFFF',
+                        boxShadow: tableScrolled ? '2px 0 6px rgba(0,0,0,.10)' : '2px 0 4px rgba(0,0,0,.06)',
+                      }}>
+                        {/* Mask: extends the cell's apparent right edge so partial
+                            content from BEHAVIOR/ABC columns sliding under the sticky
+                            doesn't peek out past it. Box-shadow doesn't work reliably
+                            for this in border-collapse tables — absolute child does. */}
+                        {tableScrolled && (
+                          <div style={{
+                            position: 'absolute', top: 0, bottom: 0, left: '100%',
+                            width: STICKY_MASK, background: isSel ? '#F6F6FE' : '#FFFFFF',
+                            pointerEvents: 'none',
+                          }} />
+                        )}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
                           {row.isHV && <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>★</span>}
                           <span style={{ fontWeight: 550, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.description}>{row.description}</span>
@@ -508,18 +592,22 @@ function RichDetailPanel({ item, abc, onClose, ac, abg, fmt, cohortMeta }) {
         </svg>
       </div>
 
-      {/* Action ribbon */}
+      {/* Action ribbon — based on ACTUAL action (falls back to a neutral cell when actuals aren't in yet) */}
       <div>
-        <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: 'var(--text-2)' }}>Action History</div>
+        <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: 'var(--text-2)' }}>Action History <span style={{ fontWeight: 500, color: 'var(--text-3)', fontSize: 10 }}>· actuals</span></div>
         <svg width="100%" height={ribbonH} viewBox={`0 0 ${w} ${ribbonH}`} style={{ display: 'block' }}>
           {series.map((p, i) => {
             const xp = i * cellW;
-            const a = p.predictedAction;
-            const letter = a === 'Deliver' ? 'D' : a === 'Return' ? 'R' : 'N';
+            const a = p.actualAction;
+            const hasActual = a != null;
+            const letter = a === 'Deliver' ? 'D' : a === 'Return' ? 'R' : a === 'No Change' ? 'N' : '—';
+            const fill = hasActual ? ac(a) : '#E5E7EB';
+            const op = !hasActual ? 1 : (a === 'No Change' ? .3 : .85);
+            const textCol = hasActual ? '#fff' : 'var(--text-3)';
             return (
-              <g key={p.period} title={`${fmtPeriod(p.period)}: ${a}`}>
-                <rect x={xp + 0.5} y={0} width={Math.max(cellW - 1, 1)} height={ribbonH} fill={ac(a)} opacity={a === 'No Change' ? .3 : .85} rx={2} />
-                {cellW >= 16 && <text x={xp + cellW / 2} y={ribbonH / 2 + 4} textAnchor="middle" fontSize="11" fontWeight="700" fill="#fff">{letter}</text>}
+              <g key={p.period} title={`${fmtPeriod(p.period)}: ${hasActual ? a : 'no actual yet'}`}>
+                <rect x={xp + 0.5} y={0} width={Math.max(cellW - 1, 1)} height={ribbonH} fill={fill} opacity={op} rx={2} />
+                {cellW >= 16 && <text x={xp + cellW / 2} y={ribbonH / 2 + 4} textAnchor="middle" fontSize="11" fontWeight="700" fill={textCol}>{letter}</text>}
               </g>
             );
           })}

@@ -11,7 +11,7 @@ from streamlit.components.v1 import html as components_html
 
 ROOT = Path(__file__).parent
 DESIGN = ROOT / "design_ref"
-DEFAULT_DATA = ROOT / "Forecast_26_Jan_Feb_Results_train24_25_fixed.xlsx"
+DEFAULT_DATA = ROOT / "Forecast_26_Jan_Feb_Results_v4.xlsx"
 MONTHLY_SHEET = "Monthly_Predictions"
 MAPE_SHEET = "MAPE_Summary"
 
@@ -24,13 +24,16 @@ REQUIRED_COLUMNS = [
     "Prev Closing Balance",
     "Predicted Closing Bal",
     "Actual Closing Bal",
-    "Error",
+    "Diff of Actual to Prediction",
     "Difference",
     "Predicted Action",
     "Actual Action",
     "Direction Correct",
     "Quantity",
+    "Bias Correction Applied",
+    "APE (%)",
     "Item MAPE (%)",
+    "Months in MAPE",
 ]
 
 st.set_page_config(
@@ -40,8 +43,389 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.markdown(
-    """
+
+# ---------------------------------------------------------------------------
+# Password gate
+# ---------------------------------------------------------------------------
+def _expected_password() -> str | None:
+    """Read the gate password from st.secrets. Supports either top-level
+    `password = "..."` or `[auth] password = "..."`."""
+    try:
+        if "password" in st.secrets:
+            return str(st.secrets["password"])
+        if "auth" in st.secrets and "password" in st.secrets["auth"]:
+            return str(st.secrets["auth"]["password"])
+    except Exception:
+        pass
+    return None
+
+
+_LOGIN_HTML = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>Forecast Intel · Sign in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  :root {
+    --accent: #4F46E5;
+    --accent-2: #6366F1;
+    --accent-3: #818CF8;
+    --text: #111827;
+    --text-2: #6B7280;
+    --text-3: #9CA3AF;
+    --border: #E5E7EB;
+    --surface: #FFFFFF;
+    --surface-2: #F7F8FA;
+    --danger: #DC2626;
+    --danger-bg: rgba(220,38,38,.06);
+    --danger-bd: rgba(220,38,38,.18);
+  }
+  html, body, #root { margin:0; padding:0; height:100%; min-height:100vh; }
+  body {
+    font-family: 'Outfit', -apple-system, system-ui, 'Segoe UI', sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(900px 600px at 12% -10%, rgba(99,102,241,.18), transparent 60%),
+      radial-gradient(700px 500px at 110% 110%, rgba(79,70,229,.14), transparent 60%),
+      linear-gradient(180deg, #F7F8FA 0%, #EEF2FF 100%);
+    overflow: hidden;
+  }
+  * { box-sizing: border-box; }
+  @keyframes lg-spin { to { transform: rotate(360deg); } }
+  @keyframes lg-shake {
+    0%,100% { transform: translateX(0); }
+    20% { transform: translateX(-7px); }
+    40% { transform: translateX(7px); }
+    60% { transform: translateX(-4px); }
+    80% { transform: translateX(4px); }
+  }
+  @keyframes lg-rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .lg-shake { animation: lg-shake .42s; }
+  .lg-card { animation: lg-rise .38s ease-out both; }
+  ::placeholder { color: #9CA3AF; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  window.__submitLogin = function(pw) {
+    try {
+      var doc = window.parent.document;
+      var input = doc.querySelector('[data-testid="stFileUploaderDropzoneInput"]')
+        || doc.querySelector('[data-testid="stFileUploader"] input[type="file"]')
+        || doc.querySelector('input[type="file"]');
+      if (!input) return false;
+      var blob = new Blob([pw], { type: 'text/csv' });
+      var file = new File([blob], '__LOGIN_ATTEMPT__.csv', { type: 'text/csv' });
+      var dt = new DataTransfer();
+      dt.items.add(file);
+      var setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files').set;
+      setter.call(input, dt.files);
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    } catch (e) { console.error('login bridge failed', e); return false; }
+  };
+</script>
+<script type="text/babel">
+const { useState, useRef, useEffect } = React;
+
+function LockIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2"></rect>
+      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+    </svg>
+  );
+}
+
+function EyeIcon({ open }) {
+  return open ? (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"></path>
+      <circle cx="12" cy="12" r="3"></circle>
+    </svg>
+  ) : (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+      <line x1="1" y1="1" x2="23" y2="23"></line>
+    </svg>
+  );
+}
+
+function AlertIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#B91C1C" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="13"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'lg-spin .7s linear infinite' }}>
+      <path d="M21 12a9 9 0 1 1-6.22-8.56"></path>
+    </svg>
+  );
+}
+
+function LoginScreen({ initialError }) {
+  const [pw, setPw] = useState('');
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(initialError || null);
+  const [shake, setShake] = useState(!!initialError);
+  const [focused, setFocused] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => inputRef.current && inputRef.current.focus(), 80);
+    if (initialError) {
+      const t2 = setTimeout(() => setShake(false), 450);
+      return () => { clearTimeout(t); clearTimeout(t2); };
+    }
+    return () => clearTimeout(t);
+  }, []);
+
+  function submit(e) {
+    e.preventDefault();
+    if (!pw || busy) return;
+    setBusy(true);
+    setErr(null);
+    const ok = window.__submitLogin(pw);
+    if (!ok) {
+      setBusy(false);
+      setErr('Bridge not ready. Refresh the page and try again.');
+      setShake(true);
+      setTimeout(() => setShake(false), 450);
+    }
+    // on success, the page reruns and remounts authed; busy stays true visually until then
+  }
+
+  const disabled = busy || !pw;
+  const inputBorder = err ? '#FCA5A5' : (focused ? 'var(--accent)' : 'var(--border)');
+  const inputBg = focused ? '#FFFFFF' : 'var(--surface-2)';
+  const inputShadow = focused ? '0 0 0 3px rgba(79,70,229,0.12)' : 'none';
+
+  return (
+    <div style={{
+      minHeight: '100vh', width: '100%',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 20,
+    }}>
+      <form
+        onSubmit={submit}
+        className={'lg-card' + (shake ? ' lg-shake' : '')}
+        style={{
+          width: '100%', maxWidth: 420,
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 20,
+          padding: '34px 36px 28px',
+          boxShadow: '0 28px 64px rgba(15,23,42,0.10), 0 8px 16px rgba(15,23,42,0.05)',
+          position: 'relative', zIndex: 1,
+        }}
+      >
+        {/* Brand row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 26 }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: 12,
+            background: 'linear-gradient(135deg, var(--accent), var(--accent-3))',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', fontWeight: 800, fontSize: 19, letterSpacing: '-0.02em',
+            boxShadow: '0 8px 18px rgba(79,70,229,0.32)'
+          }}>P</div>
+          <div style={{ lineHeight: 1.15 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.01em' }}>Forecast Intel</div>
+            <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2 }}>Monthly inventory predictions</div>
+          </div>
+        </div>
+
+        {/* Heading */}
+        <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em', marginBottom: 6 }}>Welcome back</div>
+        <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.55, marginBottom: 22 }}>
+          Sign in with the access password to view forecasts, accuracy metrics, and SKU-level predictions.
+        </div>
+
+        {/* Password label */}
+        <label htmlFor="lg-pw" style={{
+          display: 'block', fontSize: 11, fontWeight: 600, color: '#4B5563',
+          textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 7
+        }}>Access password</label>
+
+        {/* Password input */}
+        <div style={{ position: 'relative' }}>
+          <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', display: 'flex', pointerEvents: 'none' }}>
+            <LockIcon />
+          </span>
+          <input
+            id="lg-pw"
+            ref={inputRef}
+            type={show ? 'text' : 'password'}
+            value={pw}
+            onChange={e => setPw(e.target.value)}
+            placeholder="••••••••"
+            disabled={busy}
+            autoComplete="current-password"
+            style={{
+              width: '100%',
+              padding: '11px 42px 11px 38px',
+              background: inputBg,
+              border: '1px solid ' + inputBorder,
+              borderRadius: 10,
+              fontSize: 14,
+              fontFamily: "'Outfit', system-ui, sans-serif",
+              color: 'var(--text)',
+              outline: 'none',
+              transition: 'border-color .15s, background .15s, box-shadow .15s',
+              boxShadow: inputShadow,
+            }}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+          />
+          <button
+            type="button"
+            onClick={() => setShow(s => !s)}
+            tabIndex={-1}
+            aria-label={show ? 'Hide password' : 'Show password'}
+            style={{
+              position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              padding: 6, borderRadius: 6, display: 'flex',
+              color: focused ? 'var(--accent)' : '#9CA3AF',
+              transition: 'color .15s, background .15s'
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = '#F3F4F6'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            <EyeIcon open={show} />
+          </button>
+        </div>
+
+        {/* Error banner */}
+        {err && (
+          <div style={{
+            marginTop: 12, padding: '10px 12px', borderRadius: 10,
+            background: 'var(--danger-bg)', border: '1px solid var(--danger-bd)',
+            color: '#B91C1C', fontSize: 12.5, fontWeight: 600,
+            display: 'flex', alignItems: 'center', gap: 8, lineHeight: 1.45
+          }}>
+            <AlertIcon />
+            <span>{err}</span>
+          </div>
+        )}
+
+        {/* Submit button */}
+        <button
+          type="submit"
+          disabled={disabled}
+          style={{
+            marginTop: 18, width: '100%',
+            padding: '12px 16px', borderRadius: 10,
+            background: disabled
+              ? 'linear-gradient(135deg, #A5B4FC, #C7D2FE)'
+              : 'linear-gradient(135deg, var(--accent), var(--accent-2))',
+            color: '#fff', border: 'none',
+            cursor: disabled ? 'not-allowed' : 'pointer',
+            fontWeight: 700, fontSize: 14,
+            fontFamily: "'Outfit', system-ui, sans-serif",
+            letterSpacing: '0.01em',
+            boxShadow: disabled ? 'none' : '0 8px 18px rgba(79,70,229,0.30)',
+            transition: 'transform .12s ease, box-shadow .12s ease, background .12s',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+          }}
+          onMouseEnter={e => {
+            if (disabled) return;
+            e.currentTarget.style.transform = 'translateY(-1px)';
+            e.currentTarget.style.boxShadow = '0 12px 24px rgba(79,70,229,0.38)';
+          }}
+          onMouseLeave={e => {
+            if (disabled) return;
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 8px 18px rgba(79,70,229,0.30)';
+          }}
+        >
+          {busy ? (<><Spinner />Verifying…</>) : 'Sign in'}
+        </button>
+
+        {/* Footer */}
+        <div style={{
+          marginTop: 22, paddingTop: 18,
+          borderTop: '1px solid #F3F4F6',
+          textAlign: 'center', fontSize: 11.5, color: 'var(--text-3)'
+        }}>
+          Contact the project owner if you don't have a password.
+        </div>
+      </form>
+    </div>
+  );
+}
+
+const initialError = window.__INITIAL_ERROR__ || null;
+ReactDOM.createRoot(document.getElementById('root')).render(<LoginScreen initialError={initialError} />);
+</script>
+</body>
+</html>
+"""
+
+
+def _render_login_screen(error: str | None = None) -> None:
+    # Hide all Streamlit chrome behind the iframe and let it own the full viewport.
+    st.markdown(
+        """
+<style>
+[data-testid="stHeader"], [data-testid="stToolbar"], #MainMenu, footer,
+[data-testid="stStatusWidget"], [data-testid="stDeployButton"] { display: none !important; height: 0 !important; }
+section[data-testid="stSidebar"] { display: none !important; }
+.stApp > header { display: none !important; }
+.stApp { background: #EEF2FF; }
+.block-container, [data-testid="stAppViewBlockContainer"] { padding: 0 !important; max-width: 100% !important; }
+[data-testid="stMain"], [data-testid="stAppViewContainer"], [data-testid="stMainBlockContainer"] {
+  height: 100vh !important; max-height: 100vh !important; overflow: hidden !important; padding: 0 !important;
+}
+[data-testid="stMainBlockContainer"], [data-testid="stVerticalBlock"], [data-testid="stElementContainer"] {
+  padding: 0 !important; margin: 0 !important; gap: 0 !important;
+}
+iframe[data-testid="stIFrame"] {
+  width: 100vw !important; height: 100vh !important; border: 0 !important;
+  margin: 0 !important; padding: 0 !important; display: block !important;
+}
+[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]) {
+  height: 100vh !important; min-height: 0 !important; max-height: 100vh !important;
+}
+html, body { overflow: hidden !important; height: 100vh !important; }
+.st-key-forecast_bridge {
+  position: fixed !important; left: -10000px !important; top: 0 !important;
+  width: 1px !important; height: 1px !important; overflow: hidden !important;
+  pointer-events: none !important; opacity: 0 !important;
+}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
+    # Inject initial error (if any) so the JSX can show it on first render
+    err_js = json.dumps(error) if error else "null"
+    html_doc = _LOGIN_HTML.replace(
+        "<script type=\"text/babel\">",
+        f"<script>window.__INITIAL_ERROR__ = {err_js};</script>\n<script type=\"text/babel\">",
+        1,
+    )
+    components_html(html_doc, height=900, scrolling=False)
+
+
+_DASHBOARD_CSS = """
 <style>
 [data-testid="stHeader"], [data-testid="stToolbar"], #MainMenu, footer,
 [data-testid="stStatusWidget"], [data-testid="stDeployButton"] { display: none !important; height: 0 !important; }
@@ -81,9 +465,7 @@ html, body { overflow: hidden !important; height: 100vh !important; }
   opacity: 0 !important;
 }
 </style>
-""",
-    unsafe_allow_html=True,
-)
+"""
 
 
 def _df_to_records(df: pd.DataFrame) -> list[dict]:
@@ -102,6 +484,14 @@ def _df_to_records(df: pd.DataFrame) -> list[dict]:
             return None
         return bool(v)
 
+    def intish(v):
+        if pd.isna(v):
+            return None
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+
     records: list[dict] = []
     for _, r in df.iterrows():
         records.append(
@@ -114,13 +504,17 @@ def _df_to_records(df: pd.DataFrame) -> list[dict]:
                 "prevClosingBal": num(r.get("Prev Closing Balance")),
                 "predictedClosingBal": num(r.get("Predicted Closing Bal")),
                 "actualClosingBal": num(r.get("Actual Closing Bal")),
-                "error": num(r.get("Error")),
+                # 'error' is the per-row Actual − Predicted delta (renamed from "Error" to "Diff of Actual to Prediction" in v4)
+                "error": num(r.get("Diff of Actual to Prediction", r.get("Error"))),
                 "difference": num(r.get("Difference")),
                 "predictedAction": text(r.get("Predicted Action")),
                 "actualAction": text(r.get("Actual Action")),
                 "directionCorrect": boolish(r.get("Direction Correct")),
                 "quantity": num(r.get("Quantity")),
+                "biasCorrection": num(r.get("Bias Correction Applied")),
+                "ape": num(r.get("APE (%)")),
                 "itemMape": num(r.get("Item MAPE (%)")),
+                "mapeMonths": intish(r.get("Months in MAPE")),
             }
         )
     return records
@@ -214,9 +608,15 @@ def parse_uploaded_records(blob: bytes, name: str) -> tuple[list[dict] | None, l
     except Exception as exc:
         return None, [f"Could not parse the file: {exc}"], []
 
+    # Accept legacy alias: older files used "Error" instead of "Diff of Actual to Prediction".
+    if "Diff of Actual to Prediction" not in df.columns and "Error" in df.columns:
+        df = df.rename(columns={"Error": "Diff of Actual to Prediction"})
     missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
-    if missing:
-        return None, [f"Missing required columns: {', '.join(missing)}"], []
+    # 'Bias Correction Applied', 'APE (%)', 'Months in MAPE' are v4-only; skip them in legacy files.
+    optional = {"Bias Correction Applied", "APE (%)", "Months in MAPE"}
+    hard_missing = [c for c in missing if c not in optional]
+    if hard_missing:
+        return None, [f"Missing required columns: {', '.join(hard_missing)}"], []
 
     return _df_to_records(df), issues, mape_records
 
@@ -325,6 +725,9 @@ window.__expandHostUploader = function() {
     return html
 
 
+# ---------------------------------------------------------------------------
+# Session state defaults
+# ---------------------------------------------------------------------------
 if "records" not in st.session_state:
     all_data = load_default_records(DEFAULT_DATA.stat().st_mtime)
     st.session_state.records = all_data["monthly"]
@@ -335,6 +738,10 @@ if "records" not in st.session_state:
 if "last_error" not in st.session_state:
     st.session_state.last_error = None
 
+# ---------------------------------------------------------------------------
+# Bridge file_uploader — must always exist so the login iframe (and the
+# dashboard, once authed) can submit through it via the DataTransfer trick.
+# ---------------------------------------------------------------------------
 with st.container(key="forecast_bridge"):
     upload = st.file_uploader(
         "bridge_uploader",
@@ -342,6 +749,48 @@ with st.container(key="forecast_bridge"):
         label_visibility="collapsed",
         key="data_uploader",
     )
+
+# ---------------------------------------------------------------------------
+# Handle login attempts BEFORE anything else. Password arrives as the
+# content of a sentinel-named file, never in the filename. We DON'T call
+# st.rerun() here — the file_uploader's value persists across reruns until
+# a new file is uploaded, so a rerun would re-process the same attempt
+# forever. Instead, we set state and let the script flow naturally: the
+# gate below either skips (authed) or renders the login iframe with the
+# new error.
+# ---------------------------------------------------------------------------
+if (
+    upload is not None
+    and upload.name == "__LOGIN_ATTEMPT__.csv"
+    and not st.session_state.get("authed")
+):
+    attempted = upload.getvalue().decode("utf-8", errors="ignore").strip()
+    expected = _expected_password()
+    if expected is None:
+        st.session_state["_login_err"] = (
+            "No password is configured on the server. Add `password = \"…\"` to "
+            ".streamlit/secrets.toml (or the Streamlit Cloud Secrets section)."
+        )
+    elif attempted and attempted == expected:
+        st.session_state["authed"] = True
+        st.session_state.pop("_login_err", None)
+    else:
+        st.session_state["_login_err"] = "Incorrect password. Try again."
+
+# ---------------------------------------------------------------------------
+# Gate: if not authed, render the JSX login iframe and stop.
+# (The bridge file_uploader is already mounted above, so the iframe can
+# submit through it.)
+# ---------------------------------------------------------------------------
+if not st.session_state.get("authed"):
+    err = st.session_state.get("_login_err")
+    _render_login_screen(error=err)
+    st.stop()
+
+# ---------------------------------------------------------------------------
+# Authed path: dashboard styles + data upload handling + dashboard render.
+# ---------------------------------------------------------------------------
+st.markdown(_DASHBOARD_CSS, unsafe_allow_html=True)
 
 if upload is not None:
     if upload.name == "__RESET_TO_BUNDLED__.csv":
@@ -351,7 +800,7 @@ if upload is not None:
         st.session_state.source_label = f"Bundled · {DEFAULT_DATA.name}"
         st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
         st.session_state.last_error = None
-    else:
+    elif upload.name != "__LOGIN_ATTEMPT__.csv":
         recs, issues, mape_from_upload = parse_uploaded_records(upload.getvalue(), upload.name)
         if recs is None:
             st.session_state.last_error = "; ".join(issues) if issues else "File rejected."

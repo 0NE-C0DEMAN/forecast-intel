@@ -2,7 +2,9 @@
 
 function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDataSource, itemCount }) {
   const nav = [
+    { id: 'lineitems', label: 'Line Items', icon: 'list' },
     { id: 'predictions', label: 'Predictions', icon: 'chart' },
+    { id: 'accuracy', label: 'Model Accuracy', icon: 'target' },
     { id: 'forecasts', label: 'Item Forecasts', icon: 'forecasts', badge: null },
     { id: 'explorer', label: 'Item Explorer', icon: 'table', badge: itemCount },
     { id: 'upload', label: 'Upload Data', icon: 'upload' },
@@ -19,6 +21,8 @@ function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDa
     chevronL: <><polyline points="15 18 9 12 15 6"></polyline></>,
     chevronR: <><polyline points="9 18 15 12 9 6"></polyline></>,
     forecasts: <><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path><path d="M2 20h20"></path></>,
+    list: <><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></>,
+    target: <><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></>,
   };
 
   const SvgIcon = ({ name, size = 18 }) => (

@@ -338,14 +338,60 @@ function ModelAccuracyTable({ periodGroups, modelLabel }) {
 
 /* ===== ITEM FORECAST CARD — actual vs predicted bars per period (like PDF charts) ===== */
 /* Colors matching the PDF reference */
-const ACT_COL = '#1E40AF';   /* dark navy  — Actual Closing Balance  */
-const PRED_COL = '#F97316';  /* orange     — Predicted Closing Balance */
-const MAPE_GREEN = '#16A34A', MAPE_AMBER = '#D97706', MAPE_RED = '#DC2626';
+const ACT_COL = '#6366F1';   /* indigo-500 — Actual Closing Balance (matches brand) */
+const PRED_COL = '#F59E0B';  /* amber-500  — Predicted Closing Balance */
+const MAPE_GREEN = '#10B981', MAPE_AMBER = '#D97706', MAPE_RED = '#EF4444';
 const mapeColor = v => v == null ? 'var(--text-3)' : v < 30 ? MAPE_GREEN : v <= 100 ? MAPE_AMBER : MAPE_RED;
 
 function ItemForecastCard({ item }) {
   const [expanded, setExpanded] = React.useState(false);
+  const [zoom, setZoom] = React.useState(1);
+  const [chartReady, setChartReady] = React.useState(false);
+  const cardRef = React.useRef(null);
+  const ZSTEP = 0.1, ZMIN = 0.6, ZMAX = 2.0;
+  const zoomIn  = () => setZoom(z => Math.min(ZMAX, Math.round((z + ZSTEP) * 10) / 10));
+  const zoomOut = () => setZoom(z => Math.max(ZMIN, Math.round((z - ZSTEP) * 10) / 10));
   const { periods } = item;
+
+  // Lazy mount the chart SVG only when the card scrolls near the viewport.
+  React.useEffect(() => {
+    if (chartReady || !cardRef.current) return;
+    const el = cardRef.current;
+    // Find inner scroll-root if present (the grid container scrolls, not the window)
+    let scrollRoot = el.parentElement;
+    while (scrollRoot && scrollRoot !== el.ownerDocument.body) {
+      const st = scrollRoot.ownerDocument.defaultView.getComputedStyle(scrollRoot);
+      if (st.overflowY === 'auto' || st.overflowY === 'scroll' || st.overflow === 'auto' || st.overflow === 'scroll') break;
+      scrollRoot = scrollRoot.parentElement;
+    }
+    const margin = 400;
+    const checkVisible = () => {
+      if (!el.isConnected) return false;
+      const cardRect = el.getBoundingClientRect();
+      const rootRect = scrollRoot && scrollRoot !== el.ownerDocument.body
+        ? scrollRoot.getBoundingClientRect()
+        : { top: 0, bottom: el.ownerDocument.defaultView.innerHeight };
+      return cardRect.bottom >= rootRect.top - margin && cardRect.top <= rootRect.bottom + margin;
+    };
+    if (checkVisible()) { setChartReady(true); return; }
+    // Listen for scroll on root + window so we catch both
+    let raf = null;
+    const onScroll = () => {
+      if (raf) return;
+      raf = el.ownerDocument.defaultView.requestAnimationFrame(() => {
+        raf = null;
+        if (checkVisible()) setChartReady(true);
+      });
+    };
+    const target = scrollRoot && scrollRoot !== el.ownerDocument.body ? scrollRoot : el.ownerDocument.defaultView;
+    target.addEventListener('scroll', onScroll, { passive: true });
+    el.ownerDocument.defaultView.addEventListener('resize', onScroll, { passive: true });
+    return () => {
+      if (raf) el.ownerDocument.defaultView.cancelAnimationFrame(raf);
+      target.removeEventListener('scroll', onScroll);
+      el.ownerDocument.defaultView.removeEventListener('resize', onScroll);
+    };
+  }, [chartReady]);
 
   const fmtMon = p => { const m = p.split('-')[1]; const ns = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return ns[parseInt(m)] || p; };
   const fmtK  = v => v == null ? '—' : v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : Math.round(v).toString();
@@ -358,21 +404,66 @@ function ItemForecastCard({ item }) {
   const multiYear = years.length > 1;
   const nMape = periods.filter(p => p.itemMape != null).length;
 
+  const [hoverIdx, setHoverIdx] = React.useState(null);
+
   function renderChart(opts = {}) {
-    const barW  = opts.barW  || 28;
-    const barGap = 3;
-    const groupGap = opts.groupGap || 18;
+    const xZoom = opts.xZoom || 1;
+    const barW  = (opts.barW  || 38) * xZoom;
+    const barGap = 4 * xZoom;
+    const groupGap = (opts.groupGap || 22) * xZoom;
     const cH   = opts.cH   || 200;
     const padL = opts.padL || 60;
-    const padT = opts.padT || 26;
+    const padT = opts.padT || 52;
     const padB = opts.padB || (multiYear ? (hasDir ? 60 : 48) : (hasDir ? 52 : 40));
-    const fs   = opts.fs   || 10;
+    const fs   = opts.fs   || 12;
     const groupW = (hasActuals ? barW * 2 + barGap : barW) + groupGap;
     const chartW = padL + periods.length * groupW + 16;
     const svgH  = padT + cH + padB;
+    const fmtFull = (v) => v == null ? '—' : v >= 1e6 ? (v/1e6).toFixed(2)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : Math.round(v).toLocaleString();
+    const fmtSigned = (v) => v == null ? '—' : (v > 0 ? '+' : '') + fmtFull(v);
+    const fmtPeriodFull = (p) => { const m = p.split('-')[1]; const y = p.split('-')[0]; const ns = ['','January','February','March','April','May','June','July','August','September','October','November','December']; return `${ns[parseInt(m)] || ''} ${y}`; };
 
     return (
-      <div style={{ overflowX: 'auto', overflowY: 'visible' }}>
+      <div style={{ overflowX: 'auto', overflowY: 'visible', position: 'relative' }}>
+        {/* HTML hover tooltip — pinned at top, free to extend past SVG bounds */}
+        {hoverIdx != null && periods[hoverIdx] && (() => {
+          const p = periods[hoverIdx];
+          const groupCenterX = padL + hoverIdx * groupW + (hasActuals ? barW + barGap / 2 : barW / 2);
+          const ttW = 240;
+          const ttX = Math.max(4, Math.min(chartW - ttW - 4 < 4 ? 4 : chartW - ttW - 4, groupCenterX - ttW / 2));
+          return (
+            <div style={{
+              position: 'absolute', top: 4, left: ttX, width: ttW,
+              background: '#111827', color: '#fff', borderRadius: 7,
+              padding: '7px 11px', pointerEvents: 'none', zIndex: 10,
+              boxShadow: '0 6px 16px rgba(0,0,0,.18)',
+              fontFamily: 'var(--font)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 700 }}>{fmtPeriodFull(p.period)}</span>
+                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {p.directionCorrect != null && <span style={{ color: p.directionCorrect ? MAPE_GREEN : MAPE_RED, fontSize: 12, fontWeight: 800, lineHeight: 1 }}>{p.directionCorrect ? '✓' : '✗'}</span>}
+                  {(p.ape != null || p.itemMape != null) && (() => {
+                    const v = p.ape != null ? p.ape : p.itemMape;
+                    const lbl = p.ape != null ? 'APE' : 'MAPE';
+                    return <span style={{ color: mapeColor(v), fontFamily: 'var(--mono)', fontSize: 10.5, fontWeight: 700 }}>{lbl} {v.toFixed(1)}%</span>;
+                  })()}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'var(--mono)', fontSize: 10.5, fontWeight: 600, color: '#D1D5DB' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: 2, background: ACT_COL, display: 'inline-block' }}></span>
+                  A <strong style={{ color: '#fff', marginLeft: 1 }}>{fmtFull(p.actualClosingBal)}</strong>
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: 2, background: PRED_COL, display: 'inline-block' }}></span>
+                  P <strong style={{ color: '#fff', marginLeft: 1 }}>{fmtFull(p.predictedClosingBal)}</strong>
+                </span>
+                {p.error != null && <span style={{ marginLeft: 'auto', color: p.error >= 0 ? '#34D399' : '#F87171', fontWeight: 700 }}>Δ {fmtSigned(p.error)}</span>}
+              </div>
+            </div>
+          );
+        })()}
         <svg width={chartW} height={svgH} viewBox={`0 0 ${chartW} ${svgH}`} style={{ display: 'block' }}>
           {/* Rotated Y-axis label */}
           <text x={10} y={padT + cH / 2} textAnchor="middle" fontSize={fs - 2} fill="var(--text-3)"
@@ -395,7 +486,8 @@ function ItemForecastCard({ item }) {
             const gx  = padL + i * groupW;
             const actH  = p.actualClosingBal != null ? Math.max((p.actualClosingBal / maxVal) * cH, 2) : 0;
             const predH = Math.max(((p.predictedClosingBal || 0) / maxVal) * cH, 2);
-            const mape  = p.itemMape;
+            // Use per-period APE if present (v4 schema), fall back to item-level MAPE for older data.
+            const mape  = p.ape != null ? p.ape : p.itemMape;
             const isNewYear = multiYear && (i === 0 || p.period.split('-')[0] !== periods[i-1].period.split('-')[0]);
             /* center of group for MAPE label & X label */
             const groupCx = hasActuals ? gx + barW + barGap / 2 : gx + barW / 2;
@@ -403,26 +495,31 @@ function ItemForecastCard({ item }) {
             const topY = padT + cH - Math.max(predH, actH > 0 ? actH : predH);
             const yr = p.period.split('-')[0];
 
+            const dim = hoverIdx != null && hoverIdx !== i;
+            const hoverPx = hasActuals ? gx + barW + barGap + barW : gx + barW;
             return (
-              <g key={p.period}>
+              <g key={p.period} style={{ opacity: dim ? 0.4 : 1, transition: 'opacity .12s', cursor: 'pointer' }}
+                onMouseEnter={() => setHoverIdx(i)} onMouseLeave={() => setHoverIdx(null)}>
+                {/* Hover hit area covering the whole group */}
+                <rect x={gx - groupGap / 2 + 1} y={padT} width={(hasActuals ? barW * 2 + barGap : barW) + groupGap - 2} height={cH} fill="transparent" />
                 {/* Year separator */}
                 {isNewYear && i > 0 && <line x1={gx - groupGap / 2} y1={padT} x2={gx - groupGap / 2} y2={padT + cH + 1} stroke="#E5E7EB" strokeWidth={1} strokeDasharray="4 3" />}
 
-                {/* Actual bar (left, dark navy) */}
+                {/* Actual bar (left, indigo) */}
                 {actH > 0 && (
                   <g>
-                    <rect x={gx} y={padT + cH - actH} width={barW} height={actH} rx={2} fill={ACT_COL} opacity={0.88} />
-                    {actH > 22 && <text x={gx + barW / 2} y={padT + cH - 4} textAnchor="middle" fontSize={fs - 2} fill="#fff" fontWeight="700" fontFamily="var(--mono)">{fmtK(p.actualClosingBal)}</text>}
+                    <rect x={gx} y={padT + cH - actH} width={barW} height={actH} rx={2} fill={ACT_COL} opacity={hoverIdx === i ? 1 : 0.88} />
+                    {actH > 22 && <text x={gx + barW / 2} y={padT + cH - 4} textAnchor="middle" fontSize={fs - 1} fill="#fff" fontWeight="700" fontFamily="var(--mono)">{fmtK(p.actualClosingBal)}</text>}
                   </g>
                 )}
 
-                {/* Predicted bar (right if actuals exist, center otherwise — orange) */}
+                {/* Predicted bar (right if actuals exist, center otherwise — amber) */}
                 {(() => {
                   const px = hasActuals ? gx + barW + barGap : gx;
                   return (
                     <g>
-                      <rect x={px} y={padT + cH - predH} width={barW} height={predH} rx={2} fill={PRED_COL} opacity={0.88} />
-                      {predH > 22 && <text x={px + barW / 2} y={padT + cH - 4} textAnchor="middle" fontSize={fs - 2} fill="#fff" fontWeight="700" fontFamily="var(--mono)">{fmtK(p.predictedClosingBal)}</text>}
+                      <rect x={px} y={padT + cH - predH} width={barW} height={predH} rx={2} fill={PRED_COL} opacity={hoverIdx === i ? 1 : 0.88} />
+                      {predH > 22 && <text x={px + barW / 2} y={padT + cH - 4} textAnchor="middle" fontSize={fs - 1} fill="#fff" fontWeight="700" fontFamily="var(--mono)">{fmtK(p.predictedClosingBal)}</text>}
                     </g>
                   );
                 })()}
@@ -452,6 +549,7 @@ function ItemForecastCard({ item }) {
 
           {/* X axis label */}
           <text x={padL + (periods.length * groupW) / 2} y={svgH - 2} textAnchor="middle" fontSize={fs - 1} fill="var(--text-3)" fontFamily="var(--mono)">Month</text>
+
         </svg>
       </div>
     );
@@ -489,20 +587,36 @@ function ItemForecastCard({ item }) {
 
   return (
     <>
-      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' }}>
+      <div ref={cardRef} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' }}>
         {/* Card header */}
         <div style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
             <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text-3)', fontWeight: 600 }}>{item.code}</span>
             {item.isHV && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-surface)', padding: '2px 7px', borderRadius: 4, letterSpacing: '.02em' }}>HV</span>}
-            <button onClick={() => setExpanded(true)} title="Expand chart" style={{ marginLeft: 'auto', flexShrink: 0, padding: '3px 6px', background: 'none', border: '1px solid var(--border)', borderRadius: 5, cursor: 'pointer', color: 'var(--text-3)', display: 'flex', alignItems: 'center' }}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-            </button>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button onClick={zoomOut} disabled={zoom <= ZMIN + 0.001} title={`Zoom out (${Math.round(zoom*100)}%)`} aria-label="Zoom out"
+                style={{ padding: '3px 5px', background: 'none', border: '1px solid var(--border)', borderRadius: 5, cursor: zoom <= ZMIN + 0.001 ? 'default' : 'pointer', color: zoom <= ZMIN + 0.001 ? 'var(--text-3)' : 'var(--text-2)', opacity: zoom <= ZMIN + 0.001 ? .45 : 1, display: 'flex', alignItems: 'center' }}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+              </button>
+              <span style={{ fontSize: 9, fontFamily: 'var(--mono)', color: 'var(--text-3)', minWidth: 30, textAlign: 'center' }}>{Math.round(zoom*100)}%</span>
+              <button onClick={zoomIn} disabled={zoom >= ZMAX - 0.001} title={`Zoom in (${Math.round(zoom*100)}%)`} aria-label="Zoom in"
+                style={{ padding: '3px 5px', background: 'none', border: '1px solid var(--border)', borderRadius: 5, cursor: zoom >= ZMAX - 0.001 ? 'default' : 'pointer', color: zoom >= ZMAX - 0.001 ? 'var(--text-3)' : 'var(--text-2)', opacity: zoom >= ZMAX - 0.001 ? .45 : 1, display: 'flex', alignItems: 'center' }}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+              </button>
+              <button onClick={() => setExpanded(true)} title="Expand chart" aria-label="Expand"
+                style={{ padding: '3px 6px', background: 'none', border: '1px solid var(--border)', borderRadius: 5, cursor: 'pointer', color: 'var(--text-3)', display: 'flex', alignItems: 'center' }}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+              </button>
+            </div>
           </div>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', lineHeight: 1.3 }}>{item.desc}</div>
           {avgMapeLabel && <div style={{ fontSize: 11, fontWeight: 600, color: avgMapeCol, marginTop: 3 }}>{avgMapeLabel}</div>}
         </div>
-        {renderChart({})}
+        {chartReady ? renderChart({ xZoom: zoom }) : (
+          <div style={{ height: 290, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #FAFBFC, #F3F4F6)', borderRadius: 8 }}>
+            <div style={{ width: 16, height: 16, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .8s linear infinite' }}></div>
+          </div>
+        )}
       </div>
 
       {/* Expanded modal */}
@@ -573,11 +687,25 @@ function ItemForecastsGrid({ allData }) {
   }, [items, search]);
 
   const handleSearchKeyDown = (e) => {
-    if (!showSuggestions || suggestions.length === 0) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveSuggestion(i => Math.min(i + 1, suggestions.length - 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveSuggestion(i => Math.max(i - 1, 0)); }
-    else if (e.key === 'Enter' && activeSuggestion >= 0) { e.preventDefault(); setSearch(suggestions[activeSuggestion].label); setShowSuggestions(false); setActiveSuggestion(-1); }
-    else if (e.key === 'Escape') { setShowSuggestions(false); setActiveSuggestion(-1); }
+    if (e.key === 'ArrowDown') {
+      if (!showSuggestions || suggestions.length === 0) return;
+      e.preventDefault(); setActiveSuggestion(i => Math.min(i + 1, suggestions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      if (!showSuggestions || suggestions.length === 0) return;
+      e.preventDefault(); setActiveSuggestion(i => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      // Highlighted suggestion → pick that single item (same as click).
+      // Otherwise → keep current keyword, close dropdown so the grid shows ALL matches.
+      e.preventDefault();
+      if (showSuggestions && activeSuggestion >= 0 && suggestions[activeSuggestion]) {
+        setSearch(suggestions[activeSuggestion].label);
+      }
+      setShowSuggestions(false);
+      setActiveSuggestion(-1);
+      e.target.blur();
+    } else if (e.key === 'Escape') {
+      setShowSuggestions(false); setActiveSuggestion(-1);
+    }
   };
 
   // Close suggestions on outside click
@@ -933,55 +1061,121 @@ function ActionMagnitudeHeatmap({ data }) {
 }
 
 /* ===== MAPE DISTRIBUTION HISTOGRAM ===== */
-function MapeDistributionChart({ allData }) {
-  const buckets = [
-    { label: '0–20%',   min: 0,   max: 20   },
-    { label: '20–50%',  min: 20,  max: 50   },
-    { label: '50–100%', min: 50,  max: 100  },
-    { label: '100–200%',min: 100, max: 200  },
-    { label: '200%+',   min: 200, max: Infinity },
-  ];
-  const colors = ['#059669', '#10B981', '#D97706', '#F97316', '#DC2626'];
+/* ===== MAPE DISTRIBUTION (single segment) ===== */
+const MAPE_DEFAULT_THRESHOLDS = [20, 50, 100, 200];
+const MAPE_PALETTE = ['#059669', '#10B981', '#84CC16', '#EAB308', '#D97706', '#F97316', '#DC2626', '#991B1B'];
 
-  // One row per item: use the avg of its itemMape values
-  const byItem = {};
-  allData.forEach(d => {
-    if (d.itemMape == null) return;
-    if (!byItem[d.itemCode]) byItem[d.itemCode] = { vals: [], isHV: d.isHV };
-    byItem[d.itemCode].vals.push(d.itemMape);
-  });
-  const items = Object.values(byItem).map(it => ({
-    avg: it.vals.reduce((s, v) => s + v, 0) / it.vals.length,
-    isHV: it.isHV,
-  }));
+function buildMapeBuckets(thresholds) {
+  const t = [...thresholds].filter(v => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
+  const out = [];
+  let prev = 0;
+  for (const cur of t) { out.push({ label: `${prev}–${cur}%`, min: prev, max: cur }); prev = cur; }
+  out.push({ label: `${prev}%+`, min: prev, max: Infinity });
+  return out;
+}
+
+function MapeBucketEditor({ thresholds, onChange }) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(thresholds.join(', '));
+  const [err, setErr] = React.useState(null);
+
+  React.useEffect(() => { setDraft(thresholds.join(', ')); }, [thresholds]);
+
+  const apply = () => {
+    const parts = draft.split(/[,\s]+/).map(s => s.trim()).filter(Boolean).map(Number);
+    if (parts.some(n => !Number.isFinite(n) || n <= 0)) { setErr('Use comma-separated positive numbers, e.g. 20, 50, 100, 200'); return; }
+    if (!parts.length) { setErr('At least one threshold required.'); return; }
+    setErr(null);
+    onChange(parts.sort((a, b) => a - b));
+    setEditing(false);
+  };
+  const reset = () => {
+    setDraft(MAPE_DEFAULT_THRESHOLDS.join(', '));
+    onChange(MAPE_DEFAULT_THRESHOLDS);
+    setErr(null);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em' }}>MAPE buckets</span>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', flex: 1 }}>
+          {thresholds.map((t, i) => (
+            <span key={i} style={{ padding: '3px 9px', borderRadius: 999, fontSize: 10, fontWeight: 700, color: MAPE_PALETTE[i] || 'var(--text-2)', background: (MAPE_PALETTE[i] || '#9CA3AF') + '18', border: '1px solid ' + (MAPE_PALETTE[i] || '#9CA3AF') + '30', fontFamily: 'var(--mono)' }}>≤ {t}%</span>
+          ))}
+          <span style={{ padding: '3px 9px', borderRadius: 999, fontSize: 10, fontWeight: 700, color: MAPE_PALETTE[Math.min(thresholds.length, MAPE_PALETTE.length - 1)] || 'var(--text-2)', background: (MAPE_PALETTE[Math.min(thresholds.length, MAPE_PALETTE.length - 1)] || '#9CA3AF') + '18', border: '1px solid ' + (MAPE_PALETTE[Math.min(thresholds.length, MAPE_PALETTE.length - 1)] || '#9CA3AF') + '30', fontFamily: 'var(--mono)' }}>{'>'} {thresholds[thresholds.length - 1]}%</span>
+        </div>
+        <button onClick={() => setEditing(e => !e)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 7, border: '1px solid var(--border)', background: editing ? 'var(--accent-surface)' : '#fff', color: editing ? 'var(--accent)' : 'var(--text-2)', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)' }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          {editing ? 'Close' : 'Edit'}
+        </button>
+      </div>
+      {editing && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: 'var(--accent-surface)', border: '1px solid var(--accent-border)', borderRadius: 10, flexWrap: 'wrap' }}>
+          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>Thresholds (%)</label>
+          <input value={draft}
+            onChange={e => { setDraft(e.target.value); setErr(null); }}
+            onKeyDown={e => { if (e.key === 'Enter') apply(); if (e.key === 'Escape') setEditing(false); }}
+            placeholder="20, 50, 100, 200"
+            style={{ flex: 1, minWidth: 160, padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--text)', outline: 'none', background: '#fff' }} />
+          <button onClick={apply} style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontSize: 11, fontWeight: 700, fontFamily: 'var(--font)' }}>Apply</button>
+          <button onClick={reset} style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--text-2)', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)' }}>Reset</button>
+          <button onClick={() => setEditing(false)} style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--text-3)', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)' }}>Cancel</button>
+          <div style={{ flexBasis: '100%', fontSize: 10, color: err ? '#DC2626' : 'var(--text-3)', marginTop: 2 }}>
+            {err || 'Comma-separated cut-points (ascending). Items below the smallest go in the lowest bucket; items above the largest go in the top bucket.'}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MapeDistributionChart({ allData, segment = 'all', thresholds: thresholdsProp, label }) {
+  const thresholds = thresholdsProp || MAPE_DEFAULT_THRESHOLDS;
+  const buckets = React.useMemo(() => buildMapeBuckets(thresholds), [thresholds]);
+
+  const items = React.useMemo(() => {
+    const byItem = {};
+    allData.forEach(d => {
+      if (d.itemMape == null) return;
+      if (!byItem[d.itemCode]) byItem[d.itemCode] = { vals: [], isHV: d.isHV };
+      byItem[d.itemCode].vals.push(d.itemMape);
+    });
+    return Object.values(byItem).map(it => ({
+      avg: it.vals.reduce((s, v) => s + v, 0) / it.vals.length,
+      isHV: it.isHV,
+    }));
+  }, [allData]);
+
+  const filtered = segment === 'hv' ? items.filter(it => it.isHV)
+    : segment === 'std' ? items.filter(it => !it.isHV)
+    : items;
 
   const counts = buckets.map(b => ({
     ...b,
-    total: items.filter(it => it.avg >= b.min && it.avg < b.max).length,
-    hv: items.filter(it => it.isHV && it.avg >= b.min && it.avg < b.max).length,
+    count: filtered.filter(it => it.avg >= b.min && it.avg < b.max).length,
   }));
 
-  const max = Math.max(...counts.map(c => c.total), 1);
-  const total = items.length;
-  const wellPredicted = items.filter(it => it.avg < 50).length;
-  const pctWell = total ? Math.round(wellPredicted / total * 100) : 0;
+  const total = filtered.length;
+  const max = Math.max(...counts.map(c => c.count), 1);
+  const wellThreshold = thresholds[Math.min(1, thresholds.length - 1)] || 50;
+  const wellCount = filtered.filter(it => it.avg < wellThreshold).length;
+  const pctWell = total ? Math.round(wellCount / total * 100) : 0;
 
-  const bW = 64, cH = 180, padL = 44, padT = 14, padB = 48, gap = 20;
+  const bW = 56, cH = 200, padL = 44, padT = 14, padB = 44, gap = 16;
   const tW = padL + counts.length * (bW + gap) + 20;
   const sH = padT + cH + padB;
   const [hb, setHb] = React.useState(null);
 
+  if (total === 0) {
+    return <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)', fontSize: 12 }}>No {label || segment} items with MAPE data.</div>;
+  }
+
   return (
     <div>
-      <div style={{ display: 'flex', gap: 20, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
-          Distribution of per-item average MAPE. <strong style={{ color: '#059669' }}>{pctWell}%</strong> of items have MAPE &lt; 50%.
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text-3)' }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--accent)', opacity: .75, display: 'inline-block' }}></span>HV
-          </span>
-        </div>
+      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>
+        {total} {label || (segment === 'hv' ? 'high-value' : segment === 'std' ? 'standard' : '')} item{total === 1 ? '' : 's'}.{' '}
+        <strong style={{ color: pctWell >= 60 ? '#059669' : pctWell >= 30 ? '#D97706' : '#DC2626' }}>{pctWell}%</strong> have MAPE &lt; {wellThreshold}%.
       </div>
       <svg width="100%" height={sH} viewBox={`0 0 ${tW} ${sH}`} style={{ overflow: 'visible' }}>
         {[0, .25, .5, .75, 1].map((p, i) => {
@@ -990,27 +1184,20 @@ function MapeDistributionChart({ allData }) {
         })}
         {counts.map((b, i) => {
           const x = padL + 4 + i * (bW + gap);
-          const totalH = Math.max((b.total / max) * cH, b.total > 0 ? 3 : 0);
-          const hvH = Math.max((b.hv / max) * cH, b.hv > 0 ? 2 : 0);
-          const stdH = totalH - hvH;
+          const h = Math.max((b.count / max) * cH, b.count > 0 ? 3 : 0);
           const dim = hb != null && hb !== i;
+          const tint = MAPE_PALETTE[Math.min(i, MAPE_PALETTE.length - 1)];
+          const opacity = segment === 'hv' ? 0.95 : 0.65;
           return (
             <g key={i} style={{ opacity: dim ? .55 : 1, transition: 'opacity .15s', cursor: 'pointer' }}
               onMouseEnter={() => setHb(i)} onMouseLeave={() => setHb(null)}>
-              {/* Standard portion */}
-              {stdH > 0 && <rect x={x} y={padT + cH - totalH} width={bW} height={stdH} rx={0} fill={colors[i]} opacity={.45} />}
-              {/* HV portion on top */}
-              {hvH > 0 && <rect x={x} y={padT + cH - hvH} width={bW} height={hvH} rx={hvH === totalH ? 4 : 0} fill={colors[i]} opacity={.9} />}
-              {/* Round top of full bar */}
-              <rect x={x} y={padT + cH - totalH} width={bW} height={Math.min(4, totalH)} rx={4} fill={colors[i]} opacity={.9} />
-              {b.total > 0 && <text x={x + bW / 2} y={padT + cH - totalH - 5} textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--text)" fontFamily="var(--mono)">{b.total}</text>}
-              {/* Label */}
-              <text x={x + bW / 2} y={padT + cH + 16} textAnchor="middle" fontSize="10" fill="var(--text-2)" fontWeight="500">{b.label}</text>
-              {b.hv > 0 && <text x={x + bW / 2} y={padT + cH + 29} textAnchor="middle" fontSize="10" fill="var(--accent)" fontFamily="var(--mono)">{b.hv} HV</text>}
+              <rect x={x} y={padT + cH - h} width={bW} height={h} rx={4} fill={tint} opacity={opacity} />
+              {b.count > 0 && <text x={x + bW / 2} y={padT + cH - h - 5} textAnchor="middle" fontSize="11" fontWeight="700" fill={tint} fontFamily="var(--mono)">{b.count}</text>}
+              <text x={x + bW / 2} y={padT + cH + 16} textAnchor="middle" fontSize="10" fill="var(--text-2)" fontWeight="600">{b.label}</text>
+              {b.count > 0 && total > 0 && <text x={x + bW / 2} y={padT + cH + 30} textAnchor="middle" fontSize="9" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(b.count / total * 100)}%</text>}
             </g>
           );
         })}
-        <text x={tW / 2} y={padT + cH + 44} textAnchor="middle" fontSize="10" fill="var(--text-3)">Avg Item MAPE Bucket</text>
       </svg>
     </div>
   );
@@ -1041,7 +1228,7 @@ function DirectionAccuracyRing({ allData }) {
   const color = pct >= 0.8 ? '#059669' : pct >= 0.6 ? '#D97706' : '#DC2626';
 
   return (
-    <div style={{ display: 'flex', gap: 32, alignItems: 'center', flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
       <svg width={136} height={136} viewBox="0 0 136 136" style={{ flexShrink: 0 }}>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="#F3F4F6" strokeWidth={sw} />
         {pct > 0 && <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
@@ -1051,16 +1238,16 @@ function DirectionAccuracyRing({ allData }) {
         <text x={cx} y={cy + 16} textAnchor="middle" fill="var(--text-3)" fontSize="10">correct</text>
         <text x={cx} y={cy + 28} textAnchor="middle" fill="var(--text-3)" fontSize="10">{correct}/{total}</text>
       </svg>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
         {byAction.filter(b => b.total > 0).map(b => (
-          <div key={b.action} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div key={b.action} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ width: 9, height: 9, borderRadius: 2, background: ac(b.action), flexShrink: 0 }}></div>
-            <div style={{ fontSize: 11, color: 'var(--text-2)', fontWeight: 500, width: 72 }}>{b.action}</div>
-            <div style={{ width: 100, height: 6, background: '#F3F4F6', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-2)', fontWeight: 500, flex: '0 0 auto', minWidth: 64 }}>{b.action}</div>
+            <div style={{ flex: 1, height: 6, background: '#F3F4F6', borderRadius: 3, overflow: 'hidden', minWidth: 24 }}>
               <div style={{ height: '100%', borderRadius: 3, width: `${b.pct * 100}%`, background: b.pct >= .8 ? '#059669' : b.pct >= .6 ? '#D97706' : '#DC2626' }}></div>
             </div>
-            <span style={{ fontSize: 11, fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--text-2)', minWidth: 36 }}>{Math.round(b.pct * 100)}%</span>
-            <span style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>{b.correct}/{b.total}</span>
+            <span style={{ fontSize: 11, fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--text-2)', flexShrink: 0 }}>{Math.round(b.pct * 100)}%</span>
+            <span style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--mono)', flexShrink: 0 }}>{b.correct}/{b.total}</span>
           </div>
         ))}
       </div>
@@ -1315,4 +1502,4 @@ function BalanceBracketChart({ data }) {
   );
 }
 
-Object.assign(window, { ActionDonut, TopItemsBar, HVBreakdown, ClosingBalancePortfolio, ActionFlowSankey, BalanceScatter, ModelAccuracyTable, ActionMagnitudeHeatmap, ActionCountBars, HighVelocityItems, HVMovementByPeriod, ItemForecastCard, ItemForecastsGrid, MapeDistributionChart, DirectionAccuracyRing, PortfolioActualVsPredicted, ABCDistributionChart, BalanceBracketChart });
+Object.assign(window, { ActionDonut, TopItemsBar, HVBreakdown, ClosingBalancePortfolio, ActionFlowSankey, BalanceScatter, ModelAccuracyTable, ActionMagnitudeHeatmap, ActionCountBars, HighVelocityItems, HVMovementByPeriod, ItemForecastCard, ItemForecastsGrid, MapeDistributionChart, MapeBucketEditor, MAPE_DEFAULT_THRESHOLDS, DirectionAccuracyRing, PortfolioActualVsPredicted, ABCDistributionChart, BalanceBracketChart });

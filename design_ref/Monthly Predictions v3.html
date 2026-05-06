@@ -154,7 +154,7 @@ function PeriodSelector({ value, onChange, options }) {
 /* ===== MODEL TYPE SELECTOR ===== */
 function App() {
   const [rawData, setRawData] = useState(null);
-  const [page, setPage] = useState('predictions');
+  const [page, setPage] = useState('lineitems');
   const [period, setPeriod] = useState(null);
   const [collapsed, setCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 900);
   const [dsOpen, setDsOpen] = useState(false);
@@ -213,7 +213,9 @@ function App() {
     </div>
   );
 
-  const pageTitle = page === 'predictions' ? 'Monthly Predictions'
+  const pageTitle = page === 'lineitems' ? 'Line Items'
+    : page === 'predictions' ? 'Monthly Predictions'
+    : page === 'accuracy' ? 'Model Accuracy'
     : page === 'explorer' ? 'Item Explorer'
     : page === 'forecasts' ? 'Item Forecasts'
     : 'Upload Data';
@@ -239,7 +241,9 @@ function App() {
         </header>
 
         <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {page === 'lineitems' && <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '14px 20px 0' }}><ItemsTableTab data={data || []} allPeriods={allPeriods} standalone /></div>}
           {page === 'predictions' && <PredictionsPage data={periodData} allData={data} stats={stats} periodGroups={periodGroups} period={activePeriod} />}
+          {page === 'accuracy' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: '14px 20px 20px' }}><AccuracyTab periodGroups={periodGroups} allData={data} /></div>}
           {page === 'explorer' && <ItemExplorerPage allData={data} period={activePeriod} />}
           {page === 'forecasts' && <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '14px 20px 0' }}><ItemForecastsGrid allData={data || []} /></div>}
           {page === 'upload' && <div style={{ padding: 24, overflow: 'auto' }}><UploadDataPage onOpenDataSource={() => setDsOpen(true)} /></div>}
@@ -262,8 +266,6 @@ function PredictionsPage({ data, allData, stats, periodGroups, period }) {
     { id: 'movement', label: 'Movement & Trends' },
     { id: 'distribution', label: 'Distribution' },
     { id: 'insights', label: 'Insights' },
-    { id: 'items', label: 'Line Items' },
-    { id: 'accuracy', label: 'Model Accuracy' },
   ];
 
   return (
@@ -298,8 +300,6 @@ function PredictionsPage({ data, allData, stats, periodGroups, period }) {
         {tab === 'movement' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><MovementTab data={data} periodGroups={periodGroups} /></div>}
         {tab === 'distribution' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><DistributionTab data={data} allData={allData} /></div>}
         {tab === 'insights' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><InsightsTab data={data} allData={allData} periodGroups={periodGroups} period={period} /></div>}
-        {tab === 'items' && <ItemsTableTab data={data} />}
-        {tab === 'accuracy' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><AccuracyTab periodGroups={periodGroups} allData={allData} /></div>}
       </div>
     </div>
   );
@@ -689,25 +689,37 @@ function DistributionTab({ data, allData }) {
 /* ===== MODEL ACCURACY TAB ===== */
 function AccuracyTab({ periodGroups, allData }) {
   const modelLabel = 'Monthly';
+  const [mapeThresholds, setMapeThresholds] = React.useState(MAPE_DEFAULT_THRESHOLDS);
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 'min-content', gap: 12 }}>
-      <Card title="Portfolio: Predicted vs Actual Closing Balance" style={{ gridColumn: 'span 4' }}>
-        <PortfolioActualVsPredicted periodGroups={periodGroups} />
-      </Card>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gridAutoRows: 'min-content', gap: 12 }}>
+      {/* Bucket editor */}
+      <div style={{ gridColumn: 'span 8', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 16px' }}>
+        <MapeBucketEditor thresholds={mapeThresholds} onChange={setMapeThresholds} />
+      </div>
+
+      {/* Top row — narrower Direction Accuracy + wider Std/HV MAPE charts */}
       <Card title="Direction Accuracy" style={{ gridColumn: 'span 2' }}>
         <DirectionAccuracyRing allData={allData} />
       </Card>
-      <Card title="Item MAPE Distribution · how well are items forecast?" style={{ gridColumn: 'span 6' }}>
-        <MapeDistributionChart allData={allData} />
+      <Card title="Item MAPE · Standard items" style={{ gridColumn: 'span 3' }}>
+        <MapeDistributionChart allData={allData} segment="std" thresholds={mapeThresholds} label="standard" />
       </Card>
-      <Card title="MAPE Summary · by period & model" style={{ gridColumn: 'span 6' }}>
+      <Card title="Item MAPE · High-value items" style={{ gridColumn: 'span 3' }}>
+        <MapeDistributionChart allData={allData} segment="hv" thresholds={mapeThresholds} label="high-value" />
+      </Card>
+
+      {/* Bottom row — Portfolio chart + MAPE Summary table */}
+      <Card title="Portfolio: Predicted vs Actual Closing Balance" style={{ gridColumn: 'span 4' }}>
+        <PortfolioActualVsPredicted periodGroups={periodGroups} />
+      </Card>
+      <Card title="MAPE Summary · by period & model" style={{ gridColumn: 'span 4' }}>
         <ModelAccuracyTable periodGroups={periodGroups} modelLabel={modelLabel} />
       </Card>
     </div>
   );
 }
 
-function ItemsTableTab({ data }) {
+function ItemsTableTab({ data, allPeriods, standalone }) {
   const [tablePage, setTablePage] = useState(0);
   const [sortCol, setSortCol] = useState('quantity');
   const [sortDir, setSortDir] = useState('desc');
@@ -715,9 +727,17 @@ function ItemsTableTab({ data }) {
   const [search, setSearch] = useState('');
   const [hvOnly, setHvOnly] = useState(false);
   const [matchFilter, setMatchFilter] = useState('All'); // All | Match | Mismatch
+  const [periodFilter, setPeriodFilter] = useState('All');
   const PAGE_SIZE = 20;
 
   const hasActuals = data.some(d => d.actualClosingBal != null);
+  const periods = standalone ? (allPeriods || [...new Set(data.map(d => d.period))].sort()) : [];
+  const fmtPeriod = (p) => {
+    if (!p) return p;
+    const m = p.match(/^(\d{4})-(\d{2})$/);
+    if (m) { const ns = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${ns[parseInt(m[2])-1]} '${m[1].slice(2)}`; }
+    return p;
+  };
   const ac = (a) => a === 'Deliver' ? '#059669' : a === 'Return' ? '#DC2626' : '#D97706';
   const acBg = (a) => a === 'Deliver' ? 'rgba(5,150,105,.1)' : a === 'Return' ? 'rgba(220,38,38,.08)' : 'rgba(217,119,6,.1)';
   const fmt = (v) => { if (v == null) return '—'; if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 1 }); return v; };
@@ -725,6 +745,7 @@ function ItemsTableTab({ data }) {
 
   const filtered = useMemo(() => {
     let rows = data;
+    if (standalone && periodFilter !== 'All') rows = rows.filter(d => d.period === periodFilter);
     if (actionFilter !== 'All') rows = rows.filter(d => d.predictedAction === actionFilter);
     if (hvOnly) rows = rows.filter(d => d.isHV);
     if (matchFilter === 'Match') rows = rows.filter(d => d.directionCorrect === true);
@@ -734,7 +755,7 @@ function ItemsTableTab({ data }) {
       rows = rows.filter(d => d.description?.toLowerCase().includes(s) || d.itemCode?.toLowerCase().includes(s));
     }
     return rows;
-  }, [data, actionFilter, hvOnly, matchFilter, search]);
+  }, [data, actionFilter, hvOnly, matchFilter, search, periodFilter, standalone]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -756,21 +777,22 @@ function ItemsTableTab({ data }) {
     setTablePage(0);
   };
 
-  React.useEffect(() => { setTablePage(0); }, [actionFilter, hvOnly, matchFilter, search]);
+  React.useEffect(() => { setTablePage(0); }, [actionFilter, hvOnly, matchFilter, search, periodFilter]);
 
   // Summary stats for toolbar
   const matchCount = data.filter(d => d.directionCorrect === true).length;
   const mismatchCount = data.filter(d => d.directionCorrect === false).length;
 
   const cols = [
-    { col: 'description',         label: 'Item',          width: '22%', align: 'left',  sortable: true },
+    ...(standalone ? [{ col: 'period', label: 'Period', width: '7%', align: 'left', sortable: true }] : []),
+    { col: 'description',         label: 'Item',          width: standalone ? '18%' : '22%', align: 'left',  sortable: true },
     { col: 'predictedAction',     label: 'Pred. Action',  width: '9%',  align: 'left',  sortable: true },
     ...(hasActuals ? [{ col: 'actualAction', label: 'Actual Action', width: '9%', align: 'left', sortable: true }] : []),
     { col: 'prevClosingBal',      label: 'Prev Bal',      width: '8%',  align: 'right', sortable: true },
     { col: 'predictedClosingBal', label: 'Pred. Bal',     width: '8%',  align: 'right', sortable: true },
     ...(hasActuals ? [{ col: 'actualClosingBal', label: 'Actual Bal', width: '8%', align: 'right', sortable: true }] : []),
     ...(hasActuals ? [{ col: 'error', label: 'Error (Δ)', width: '7%', align: 'right', sortable: true }] : []),
-    ...(hasActuals ? [{ col: '_errPct', label: 'Err %', width: '6%', align: 'right', sortable: false }] : []),
+    ...(hasActuals ? [{ col: 'ape', label: 'APE %', width: '6%', align: 'right', sortable: true }] : []),
     { col: 'difference',          label: 'Pred. Δ',       width: '7%',  align: 'right', sortable: true },
     { col: 'quantity',            label: 'Qty',            width: '6%',  align: 'right', sortable: true },
     { col: 'itemMape',            label: 'MAPE',           width: '6%',  align: 'right', sortable: true },
@@ -798,6 +820,20 @@ function ItemsTableTab({ data }) {
           <svg style={{ position: 'absolute', left: 9, top: 8, pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
           {search && <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 7, top: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 14, lineHeight: 1 }}>×</button>}
         </div>
+
+        {/* Period filter (standalone view only) */}
+        {standalone && periods.length > 1 && (
+          <div style={{ display: 'flex', background: 'var(--surface-2)', borderRadius: 8, padding: 2, gap: 2 }}>
+            {['All', ...periods].map(p => (
+              <button key={p} onClick={() => setPeriodFilter(p)} style={{
+                padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)',
+                background: periodFilter === p ? '#fff' : 'transparent',
+                color: periodFilter === p ? 'var(--accent)' : 'var(--text-3)',
+                boxShadow: periodFilter === p ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
+              }}>{p === 'All' ? 'All periods' : fmtPeriod(p)}</button>
+            ))}
+          </div>
+        )}
 
         {/* Action filter */}
         <div style={{ display: 'flex', background: 'var(--surface-2)', borderRadius: 8, padding: 2, gap: 2 }}>
@@ -856,13 +892,23 @@ function ItemsTableTab({ data }) {
             </thead>
             <tbody>
               {pageRows.map((row, i) => {
-                const errPct = row.error != null && row.actualClosingBal != null && row.actualClosingBal !== 0 ? (row.error / Math.abs(row.actualClosingBal)) * 100 : null;
+                // APE is provided directly by the v4 schema; fall back to a computed value for older files.
+                const apeVal = row.ape != null
+                  ? row.ape
+                  : (row.error != null && row.actualClosingBal != null && row.actualClosingBal !== 0
+                      ? Math.abs(row.error / row.actualClosingBal) * 100
+                      : null);
                 const mismatch = row.directionCorrect === false;
                 return (
-                  <tr key={row.itemCode + i}
+                  <tr key={row.itemCode + '_' + row.period + '_' + i}
                     style={{ borderBottom: '1px solid #F3F4F6', background: mismatch ? 'rgba(220,38,38,.03)' : 'transparent' }}
                     onMouseEnter={e => e.currentTarget.style.background = mismatch ? 'rgba(220,38,38,.06)' : '#F9FAFB'}
                     onMouseLeave={e => e.currentTarget.style.background = mismatch ? 'rgba(220,38,38,.03)' : 'transparent'}>
+
+                    {/* Period (standalone only) */}
+                    {standalone && (
+                      <td style={{ padding: '7px 10px', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>{fmtPeriod(row.period)}</td>
+                    )}
 
                     {/* Item — name + code + HV */}
                     <td style={{ padding: '7px 10px', overflow: 'hidden' }}>
@@ -902,10 +948,10 @@ function ItemsTableTab({ data }) {
                       </td>
                     )}
 
-                    {/* Error % — new column */}
+                    {/* APE % — direct from v4 schema (with fallback for older files) */}
                     {hasActuals && (
-                      <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: errPct == null ? 'var(--text-3)' : Math.abs(errPct) > 50 ? '#DC2626' : Math.abs(errPct) > 20 ? '#D97706' : '#059669' }}>
-                        {errPct != null ? (errPct > 0 ? '+' : '') + errPct.toFixed(1) + '%' : '—'}
+                      <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: apeVal == null ? 'var(--text-3)' : apeVal > 100 ? '#DC2626' : apeVal > 30 ? '#D97706' : '#059669' }}>
+                        {apeVal != null ? apeVal.toFixed(1) + '%' : '—'}
                       </td>
                     )}
 
