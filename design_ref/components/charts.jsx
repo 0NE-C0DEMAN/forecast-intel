@@ -346,52 +346,17 @@ const mapeColor = v => v == null ? 'var(--text-3)' : v < 30 ? MAPE_GREEN : v <= 
 function ItemForecastCard({ item }) {
   const [expanded, setExpanded] = React.useState(false);
   const [zoom, setZoom] = React.useState(1);
-  const [chartReady, setChartReady] = React.useState(false);
   const cardRef = React.useRef(null);
   const ZSTEP = 0.1, ZMIN = 0.6, ZMAX = 2.0;
   const zoomIn  = () => setZoom(z => Math.min(ZMAX, Math.round((z + ZSTEP) * 10) / 10));
   const zoomOut = () => setZoom(z => Math.max(ZMIN, Math.round((z - ZSTEP) * 10) / 10));
   const { periods } = item;
-
-  // Lazy mount the chart SVG only when the card scrolls near the viewport.
-  React.useEffect(() => {
-    if (chartReady || !cardRef.current) return;
-    const el = cardRef.current;
-    // Find inner scroll-root if present (the grid container scrolls, not the window)
-    let scrollRoot = el.parentElement;
-    while (scrollRoot && scrollRoot !== el.ownerDocument.body) {
-      const st = scrollRoot.ownerDocument.defaultView.getComputedStyle(scrollRoot);
-      if (st.overflowY === 'auto' || st.overflowY === 'scroll' || st.overflow === 'auto' || st.overflow === 'scroll') break;
-      scrollRoot = scrollRoot.parentElement;
-    }
-    const margin = 400;
-    const checkVisible = () => {
-      if (!el.isConnected) return false;
-      const cardRect = el.getBoundingClientRect();
-      const rootRect = scrollRoot && scrollRoot !== el.ownerDocument.body
-        ? scrollRoot.getBoundingClientRect()
-        : { top: 0, bottom: el.ownerDocument.defaultView.innerHeight };
-      return cardRect.bottom >= rootRect.top - margin && cardRect.top <= rootRect.bottom + margin;
-    };
-    if (checkVisible()) { setChartReady(true); return; }
-    // Listen for scroll on root + window so we catch both
-    let raf = null;
-    const onScroll = () => {
-      if (raf) return;
-      raf = el.ownerDocument.defaultView.requestAnimationFrame(() => {
-        raf = null;
-        if (checkVisible()) setChartReady(true);
-      });
-    };
-    const target = scrollRoot && scrollRoot !== el.ownerDocument.body ? scrollRoot : el.ownerDocument.defaultView;
-    target.addEventListener('scroll', onScroll, { passive: true });
-    el.ownerDocument.defaultView.addEventListener('resize', onScroll, { passive: true });
-    return () => {
-      if (raf) el.ownerDocument.defaultView.cancelAnimationFrame(raf);
-      target.removeEventListener('scroll', onScroll);
-      el.ownerDocument.defaultView.removeEventListener('resize', onScroll);
-    };
-  }, [chartReady]);
+  // Chart renders eagerly. We used to lazy-mount on scroll-into-view, but
+  // the scroll-root detection was unreliable inside the components iframe
+  // and visible cards would sit on a spinner until the user nudged the
+  // wheel. The browser-native `content-visibility: auto` on the card wrapper
+  // (set inline below) gives us the off-screen render skip for free
+  // without the JS coordination.
 
   const fmtMon = p => { const m = p.split('-')[1]; const ns = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return ns[parseInt(m)] || p; };
   const fmtK  = v => v == null ? '—' : v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : Math.round(v).toString();
@@ -592,8 +557,15 @@ function ItemForecastCard({ item }) {
     <>
       {/* minWidth: 0 lets the card honour the grid column's width even when
           the SVG inside has a larger natural width — the chart wrapper
-          (h-scroller) then handles the horizontal overflow. */}
-      <div ref={cardRef} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', minWidth: 0 }}>
+          (h-scroller) then handles the horizontal overflow.
+          content-visibility:auto + contain-intrinsic-size let the browser
+          skip rendering work for cards that are off-screen, so we can
+          mount all charts eagerly without paying the layout cost upfront. */}
+      <div ref={cardRef} style={{
+        background: '#fff', border: '1px solid var(--border)', borderRadius: 12,
+        padding: '14px 16px', minWidth: 0,
+        contentVisibility: 'auto', containIntrinsicSize: '400px 360px',
+      }}>
         {/* Card header */}
         <div style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
@@ -618,11 +590,7 @@ function ItemForecastCard({ item }) {
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', lineHeight: 1.3 }}>{item.desc}</div>
           {avgMapeLabel && <div style={{ fontSize: 11, fontWeight: 600, color: avgMapeCol, marginTop: 3 }}>{avgMapeLabel}</div>}
         </div>
-        {chartReady ? renderChart({ xZoom: zoom }) : (
-          <div style={{ height: 290, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #FAFBFC, #F3F4F6)', borderRadius: 8 }}>
-            <div style={{ width: 16, height: 16, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .8s linear infinite' }}></div>
-          </div>
-        )}
+        {renderChart({ xZoom: zoom })}
       </div>
 
       {/* Expanded modal */}
