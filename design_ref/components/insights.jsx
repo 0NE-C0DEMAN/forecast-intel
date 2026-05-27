@@ -599,7 +599,10 @@ function AutoInsights({ allData, currentPeriod }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
       {insights.map((ins, i) => (
-        <div key={i} style={{ display: 'flex', gap: 12, padding: '14px 16px', background: '#fff', border: `1px solid var(--border)`, borderRadius: 12, borderLeft: `4px solid ${sevColor[ins.severity]}` }}>
+        // Uniform card border — the icon + its tinted background already
+        // convey severity. The previous coloured left strip read as
+        // template-y and competed with the icon for attention.
+        <div key={i} style={{ display: 'flex', gap: 12, padding: '14px 16px', background: '#fff', border: '1px solid var(--border)', borderRadius: 12 }}>
           <div style={{ width: 30, height: 30, borderRadius: 8, background: sevBg[ins.severity], color: sevColor[ins.severity], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, flexShrink: 0 }}>{ins.icon}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', marginBottom: 3, lineHeight: 1.3 }}>{ins.title}</div>
