@@ -501,7 +501,7 @@ function ItemForecastCard({ item }) {
             const dim = hoverIdx != null && hoverIdx !== i;
             const hoverPx = hasActuals ? gx + barW + barGap + barW : gx + barW;
             return (
-              <g key={p.period} style={{ opacity: dim ? 0.4 : 1, transition: 'opacity .12s', cursor: 'pointer' }}
+              <g key={p.period} style={{ opacity: dim ? 0.88 : 1, transition: 'opacity .12s', cursor: 'pointer' }}
                 onMouseEnter={() => setHoverIdx(i)} onMouseLeave={() => setHoverIdx(null)}>
                 {/* Hover hit area covering the whole group */}
                 <rect x={gx - groupGap / 2 + 1} y={padT} width={(hasActuals ? barW * 2 + barGap : barW) + groupGap - 2} height={cH} fill="transparent" />
@@ -590,7 +590,10 @@ function ItemForecastCard({ item }) {
 
   return (
     <>
-      <div ref={cardRef} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' }}>
+      {/* minWidth: 0 lets the card honour the grid column's width even when
+          the SVG inside has a larger natural width — the chart wrapper
+          (h-scroller) then handles the horizontal overflow. */}
+      <div ref={cardRef} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', minWidth: 0 }}>
         {/* Card header */}
         <div style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
@@ -652,6 +655,19 @@ function ItemForecastsGrid({ allData }) {
   const [showSuggestions, setShowSuggestions] = React.useState(false);
   const [activeSuggestion, setActiveSuggestion] = React.useState(-1);
   const searchRef = React.useRef(null);
+  const gridRef = React.useRef(null);
+  const [gridWidth, setGridWidth] = React.useState(0);
+  // Track the grid container width so we can switch between a 2-column and
+  // 1-column layout based on whether one card can hold the full chart
+  // without horizontal scroll.
+  React.useEffect(() => {
+    if (!gridRef.current) return;
+    const ro = new ResizeObserver(entries => {
+      for (const e of entries) setGridWidth(e.contentRect.width);
+    });
+    ro.observe(gridRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   const items = React.useMemo(() => {
     const byItem = {};
@@ -798,17 +814,31 @@ function ItemForecastsGrid({ allData }) {
         </span>
       </div>
 
-      {/* Scrollable grid — no pagination */}
-      <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+      {/* Scrollable grid — vertical scroll only; chart inside each card
+          handles its own horizontal overflow when periods are too dense. */}
+      <div ref={gridRef} style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         {filtered.length === 0 ? (
           <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
             No items found{search ? ` for "${search}"` : ''}
           </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, paddingBottom: 16 }}>
-            {filtered.map(it => <ItemForecastCard key={it.code} item={it} />)}
-          </div>
-        )}
+        ) : (() => {
+          // Decide column count from measured width vs the natural chart width.
+          // Chart natural width: padL(60) + N * groupW(102) + 16, plus card
+          // padding (~32). 2-col fits when gridWidth >= 2 * cardW + gap.
+          const periodCount = filtered[0]?.periods?.length || 0;
+          const cardNeeded = 60 + periodCount * 102 + 16 + 32;
+          const twoColFits = gridWidth > 0 && gridWidth >= cardNeeded * 2 + 16;
+          const cols = twoColFits ? 2 : 1;
+          return (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+              gap: 16, paddingBottom: 16,
+            }}>
+              {filtered.map(it => <ItemForecastCard key={it.code} item={it} />)}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -844,7 +874,7 @@ function ActionCountBars({ periodGroups }) {
           const x0 = pL + 6 + gi * (groupW + gapBetween);
           const dim = hg != null && hg !== gi;
           return (
-            <g key={row.period} style={{ opacity: dim ? .65 : 1, transition: 'opacity .15s', cursor: 'pointer' }}
+            <g key={row.period} style={{ opacity: dim ? 0.88 : 1, transition: 'opacity .15s', cursor: 'pointer' }}
               onMouseEnter={() => setHg(gi)} onMouseLeave={() => setHg(null)}>
               {row.counts.map((c, ci) => {
                 const h = (c / max) * cH;
@@ -1192,7 +1222,7 @@ function MapeDistributionChart({ allData, segment = 'all', thresholds: threshold
           const tint = MAPE_PALETTE[Math.min(i, MAPE_PALETTE.length - 1)];
           const opacity = segment === 'hv' ? 0.95 : 0.65;
           return (
-            <g key={i} style={{ opacity: dim ? .55 : 1, transition: 'opacity .15s', cursor: 'pointer' }}
+            <g key={i} style={{ opacity: dim ? 0.88 : 1, transition: 'opacity .15s', cursor: 'pointer' }}
               onMouseEnter={() => setHb(i)} onMouseLeave={() => setHb(null)}>
               <rect x={x} y={padT + cH - h} width={bW} height={h} rx={4} fill={tint} opacity={opacity} />
               {b.count > 0 && <text x={x + bW / 2} y={padT + cH - h - 5} textAnchor="middle" fontSize="11" fontWeight="700" fill={tint} fontFamily="var(--mono)">{b.count}</text>}
@@ -1300,7 +1330,7 @@ function PortfolioActualVsPredicted({ periodGroups }) {
           const actH = b.hasActual ? Math.max((b.actual / maxVal) * cH, 3) : 0;
           const dim = hi != null && hi !== i;
           return (
-            <g key={b.period} style={{ opacity: dim ? .6 : 1, transition: 'opacity .15s', cursor: 'pointer' }}
+            <g key={b.period} style={{ opacity: dim ? 0.88 : 1, transition: 'opacity .15s', cursor: 'pointer' }}
               onMouseEnter={() => setHi(i)} onMouseLeave={() => setHi(null)}>
               {/* Predicted bar */}
               <rect x={gx} y={padT + cH - predH} width={barW} height={predH} rx={4} fill="var(--accent)" opacity={.75} />
