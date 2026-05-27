@@ -1,5 +1,119 @@
 /* Sidebar component — light theme */
 
+function RunPicker({ collapsed }) {
+  // Live forecast-run picker. Reads window.__RUNS_LIST + window.__CURRENT_RUN_ID
+  // (populated by the Python side from Supabase) and submits a switch through
+  // window.__switchRun(id) — the host file_uploader bridge handles the rest.
+  const runs = (typeof window !== 'undefined' && window.__RUNS_LIST) || [];
+  const currentId = (typeof window !== 'undefined' && window.__CURRENT_RUN_ID) || null;
+  const [open, setOpen] = React.useState(false);
+  const [switching, setSwitching] = React.useState(null);
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+  if (!runs.length || collapsed) return null;
+  const current = runs.find(r => Number(r.id) === Number(currentId)) || runs[0];
+  const fmtTs = (ts) => (ts || '').slice(0, 10).replace('T', ' ');
+  const modeColor = (m) => m === 'Backtest' ? '#059669' : '#6366F1';
+  const handle = (id) => {
+    if (id === currentId || switching) return;
+    setSwitching(id);
+    if (typeof window !== 'undefined' && window.__switchRun) {
+      window.__switchRun(id);
+    }
+  };
+  return (
+    <div ref={ref} style={{ padding: '0 10px 6px', position: 'relative' }}>
+      <div style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '2px 4px 6px' }}>Forecast Run</div>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 10px', borderRadius: 9,
+          background: open ? 'var(--hover)' : 'var(--surface, #fff)',
+          border: '1px solid var(--border)',
+          fontFamily: 'var(--font)', textAlign: 'left', cursor: 'pointer',
+          transition: 'background .12s',
+        }}
+        onMouseEnter={e => { if (!open) e.currentTarget.style.background = 'var(--hover)'; }}
+        onMouseLeave={e => { if (!open) e.currentTarget.style.background = 'var(--surface, #fff)'; }}
+      >
+        <span style={{
+          fontSize: 9.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
+          background: modeColor(current.forecast_mode) + '14',
+          color: modeColor(current.forecast_mode), letterSpacing: '.02em',
+        }}>{current.forecast_mode || '—'}</span>
+        <div style={{ flex: 1, minWidth: 0, lineHeight: 1.2 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text)' }}>
+            Run #{current.id} <span style={{ color: 'var(--text-3)', fontWeight: 500 }}>· {current.predict_year}</span>
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--text-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {fmtTs(current.run_timestamp)}
+          </div>
+        </div>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-3)', transition: 'transform .15s', transform: open ? 'rotate(180deg)' : 'none', flexShrink: 0 }}>
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 10, right: 10, marginTop: 4,
+          background: '#fff', border: '1px solid var(--border)', borderRadius: 10,
+          boxShadow: '0 12px 28px rgba(15,23,42,.10), 0 2px 4px rgba(15,23,42,.04)',
+          zIndex: 50, overflow: 'hidden', maxHeight: 320, overflowY: 'auto',
+        }}>
+          {runs.map(r => {
+            const sel = Number(r.id) === Number(currentId);
+            const isSw = switching === r.id;
+            const mc = modeColor(r.forecast_mode);
+            return (
+              <button key={r.id} onClick={() => handle(r.id)} disabled={sel || switching}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left',
+                  padding: '9px 11px', border: 'none',
+                  borderBottom: '1px solid #F3F4F6',
+                  background: sel ? 'var(--accent-surface)' : 'transparent',
+                  cursor: (sel || switching) ? 'default' : 'pointer',
+                  fontFamily: 'var(--font)',
+                  opacity: (switching && !isSw) ? 0.5 : 1,
+                  transition: 'background .12s',
+                }}
+                onMouseEnter={e => { if (!sel && !switching) e.currentTarget.style.background = 'var(--hover)'; }}
+                onMouseLeave={e => { if (!sel && !switching) e.currentTarget.style.background = 'transparent'; }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3,
+                    background: mc + '14', color: mc, letterSpacing: '.02em',
+                  }}>{r.forecast_mode}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
+                    Run #{r.id}
+                  </span>
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-3)' }}>
+                    {r.predict_year}
+                  </span>
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text-3)', lineHeight: 1.35 }}>
+                  {fmtTs(r.run_timestamp)} · {r.total_items} items
+                  {r.avg_mape != null && <> · MAPE {r.avg_mape.toFixed(1)}%</>}
+                </div>
+                {isSw && (
+                  <div style={{ marginTop: 4, fontSize: 9.5, color: 'var(--accent)', fontWeight: 600 }}>
+                    Loading…
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDataSource, itemCount }) {
   const nav = [
     { id: 'lineitems', label: 'Line Items', icon: 'list' },
@@ -81,7 +195,9 @@ function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDa
         </button>
       </div>
 
-      <nav style={{ flex: 1, padding: '8px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <RunPicker collapsed={collapsed} />
+
+      <nav style={{ flex: 1, padding: '4px 8px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
         {!collapsed && <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '8px 12px 4px' }}>Dashboard</div>}
         {nav.map(renderItem)}
         {config.length > 0 && (<>

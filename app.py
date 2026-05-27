@@ -621,6 +621,230 @@ def parse_uploaded_records(blob: bytes, name: str) -> tuple[list[dict] | None, l
     return _df_to_records(df), issues, mape_records
 
 
+# ---------------------------------------------------------------------------
+# Supabase data source — preferred over the bundled Excel when creds exist.
+# Schema is documented in `Tecscon_Developer_Integration_Guide.docx`. Two
+# tables: forecast_runs (one row per model run) and forecast_predictions
+# (one row per item × period × run). The Supabase schema is leaner than the
+# v4 Excel, so several fields are derived here: Tier from is_high_value,
+# actualAction + directionCorrect from actual vs previous balance, Item MAPE
+# and Months in MAPE aggregated across each item's per-period APE.
+# ---------------------------------------------------------------------------
+# Threshold below which a balance delta is treated as "No Change" rather
+# than a Deliver/Return. Calibrated to match the model's labelling.
+_ACTION_THRESHOLD = 0.5
+
+
+def _supabase_creds() -> tuple[str | None, str | None]:
+    """Read SUPABASE_URL and SUPABASE_KEY from st.secrets. Returns (url, key)
+    or (None, None) if either is missing — caller should fall back to Excel."""
+    try:
+        url = st.secrets.get("supabase_url") or st.secrets.get("SUPABASE_URL")
+        key = st.secrets.get("supabase_key") or st.secrets.get("SUPABASE_KEY")
+    except Exception:
+        return None, None
+    return (str(url) if url else None, str(key) if key else None)
+
+
+@st.cache_resource(show_spinner=False)
+def _supabase_client(url: str, key: str):
+    """Create-once Supabase client. Cached across reruns via st.cache_resource."""
+    from supabase import create_client  # local import — avoids hard dep if not used
+    return create_client(url, key)
+
+
+def _classify_action(delta: float | None) -> str | None:
+    """Map a (current − previous) balance delta onto Deliver/Return/No Change
+    using the same threshold the upstream model appears to use."""
+    if delta is None:
+        return None
+    if delta >= _ACTION_THRESHOLD:
+        return "Deliver"
+    if delta <= -_ACTION_THRESHOLD:
+        return "Return"
+    return "No Change"
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def _fetch_supabase_runs(url: str, key: str) -> list[dict]:
+    """Return all runs ordered newest → oldest. Cached briefly so the run
+    selector doesn't hammer Supabase on every interaction."""
+    client = _supabase_client(url, key)
+    resp = (
+        client.table("forecast_runs")
+        .select("*")
+        .order("run_timestamp", desc=True)
+        .execute()
+    )
+    return list(resp.data or [])
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def _fetch_supabase_predictions(url: str, key: str, run_id: int) -> list[dict]:
+    """Paginated fetch of every prediction row for a run (Supabase caps each
+    request at 1000 rows; runs hold 2-3k)."""
+    client = _supabase_client(url, key)
+    all_rows: list[dict] = []
+    offset = 0
+    PAGE = 1000
+    while True:
+        resp = (
+            client.table("forecast_predictions")
+            .select("*")
+            .eq("run_id", run_id)
+            .order("year_month")
+            .range(offset, offset + PAGE - 1)
+            .execute()
+        )
+        page = list(resp.data or [])
+        if not page:
+            break
+        all_rows.extend(page)
+        if len(page) < PAGE:
+            break
+        offset += PAGE
+    return all_rows
+
+
+def _supabase_to_records(pred_rows: list[dict]) -> list[dict]:
+    """Convert Supabase prediction rows into the JSON record shape the React
+    UI expects. Computes the derived fields the Supabase schema doesn't store
+    (Tier, Difference, Diff of Actual to Prediction, actualAction,
+    directionCorrect, Item MAPE, Months in MAPE)."""
+    if not pred_rows:
+        return []
+
+    df = pd.DataFrame(pred_rows)
+
+    # Per-item aggregates over the full run for itemMape / mapeMonths.
+    if "mape" in df.columns:
+        mape_by_item = df.groupby("item_code")["mape"].agg(
+            item_mape="mean",
+            mape_months=lambda s: int(s.notna().sum()),
+        )
+    else:
+        mape_by_item = pd.DataFrame(columns=["item_mape", "mape_months"])
+
+    def fnum(v):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    def ftext(v):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return None
+        return str(v).strip()
+
+    records: list[dict] = []
+    for r in pred_rows:
+        prev = fnum(r.get("prev_closing_bal"))
+        pred = fnum(r.get("pred_closing_balance"))
+        actual = fnum(r.get("actual_closing_balance"))
+        pred_action = ftext(r.get("pred_action"))
+        is_hv = bool(r.get("is_high_value"))
+
+        # Derived fields the Supabase schema doesn't store directly.
+        actual_action = _classify_action((actual - prev) if (actual is not None and prev is not None) else None)
+        direction_correct = (
+            (pred_action == actual_action)
+            if (pred_action and actual_action)
+            else None
+        )
+        diff_actual_pred = (actual - pred) if (actual is not None and pred is not None) else None
+        difference = (pred - prev) if (pred is not None and prev is not None) else None
+
+        code = ftext(r.get("item_code"))
+        # itemMape / mapeMonths from the per-item aggregate.
+        if code in mape_by_item.index:
+            item_mape = mape_by_item.at[code, "item_mape"]
+            item_mape = None if pd.isna(item_mape) else float(item_mape)
+            mape_months = mape_by_item.at[code, "mape_months"]
+            mape_months = None if pd.isna(mape_months) else int(mape_months)
+        else:
+            item_mape, mape_months = None, None
+
+        records.append({
+            "itemCode": code,
+            "description": ftext(r.get("item_description")),
+            "isHV": is_hv,
+            "tier": "HV" if is_hv else "Standard",
+            "period": ftext(r.get("year_month")),
+            "prevClosingBal": prev,
+            "predictedClosingBal": pred,
+            "actualClosingBal": actual,
+            "error": diff_actual_pred,
+            "difference": difference,
+            "predictedAction": pred_action,
+            "actualAction": actual_action,
+            "directionCorrect": direction_correct,
+            "quantity": fnum(r.get("action_quantity")),
+            "biasCorrection": None,  # not stored in Supabase
+            "ape": fnum(r.get("mape")),
+            "itemMape": item_mape,
+            "mapeMonths": mape_months,
+        })
+    return records
+
+
+def _synth_mape_summary(pred_rows: list[dict], run: dict | None) -> list[dict]:
+    """Build the per-period MAPE summary the Model Accuracy page expects.
+    Supabase doesn't have a MAPE_Summary table — we compute it from the
+    predictions: one row per period with MAPE All / MAPE HV / item counts."""
+    if not pred_rows:
+        return []
+    df = pd.DataFrame(pred_rows)
+    if "year_month" not in df.columns:
+        return []
+    tier_label = (run or {}).get("forecast_mode") or "Monthly"
+    out: list[dict] = []
+    for period, sub in df.groupby("year_month"):
+        all_mape = sub["mape"].dropna()
+        hv_mape = sub.loc[sub["is_high_value"] == 1, "mape"].dropna() if "is_high_value" in sub.columns else pd.Series(dtype=float)
+        deliver = int((sub.get("pred_action") == "Deliver").sum()) if "pred_action" in sub.columns else 0
+        ret = int((sub.get("pred_action") == "Return").sum()) if "pred_action" in sub.columns else 0
+        out.append({
+            "period": str(period),
+            "model": "Monthly",
+            "mapeAll": float(all_mape.mean()) if len(all_mape) else None,
+            "mapeHV": float(hv_mape.mean()) if len(hv_mape) else None,
+            "itemsPredicted": int(len(sub)),
+            "itemsDeliver": deliver,
+            "itemsReturn": ret,
+            "tier": tier_label,
+        })
+    out.sort(key=lambda r: r["period"])
+    return out
+
+
+def _load_supabase_run(url: str, key: str, run_id: int) -> tuple[list[dict], list[dict], dict | None]:
+    """Fetch a specific run + its predictions and return (records, mape_summary, run_meta)."""
+    runs = _fetch_supabase_runs(url, key)
+    run_meta = next((r for r in runs if int(r.get("id", -1)) == int(run_id)), None)
+    pred_rows = _fetch_supabase_predictions(url, key, run_id)
+    records = _supabase_to_records(pred_rows)
+    mape_summary = _synth_mape_summary(pred_rows, run_meta)
+    return records, mape_summary, run_meta
+
+
+def _supabase_source_label(run_meta: dict | None) -> str:
+    if not run_meta:
+        return "Supabase"
+    ts = str(run_meta.get("run_timestamp") or "")[:16].replace("T", " ")
+    mode = run_meta.get("forecast_mode") or ""
+    pyear = run_meta.get("predict_year")
+    bits = [f"Run #{run_meta.get('id')}"]
+    if pyear:
+        bits.append(f"{pyear}")
+    if mode:
+        bits.append(mode)
+    if ts:
+        bits.append(ts)
+    return "Supabase · " + " · ".join(bits)
+
+
 @st.cache_data(show_spinner=False)
 def _read_design_files(version: float) -> dict[str, str]:
     files: dict[str, str] = {}
@@ -645,6 +869,8 @@ def build_html(
     source_label: str,
     last_error: str | None,
     mape_summary: list[dict] | None = None,
+    runs: list[dict] | None = None,
+    current_run_id: int | None = None,
 ) -> str:
     src = _read_design_files(_design_version())
     html = src["main_html"]
@@ -655,6 +881,7 @@ def build_html(
     )
     json_str = json.dumps(records, default=str).replace("</", "<\\/")
     mape_str = json.dumps(mape_summary or [], default=str).replace("</", "<\\/")
+    runs_str = json.dumps(runs or [], default=str).replace("</", "<\\/")
 
     bridge_js = """
 window.__showErrorToast = function(msg) {
@@ -694,10 +921,33 @@ window.__expandHostUploader = function() {
     if (summary && details && !details.open) summary.click();
   } catch (e) {}
 };
+window.__switchRun = function(runId) {
+  // Submit a sentinel-named file via the host file_uploader so the Python
+  // side knows which Supabase run to load next. Payload (file content) is
+  // the integer run id as text; filename pattern is matched server-side.
+  try {
+    var doc = window.parent.document;
+    var input = doc.querySelector('[data-testid="stFileUploaderDropzoneInput"]')
+      || doc.querySelector('[data-testid="stFileUploader"] input[type=\\"file\\"]')
+      || doc.querySelector('input[type=\\"file\\"]');
+    if (!input) return false;
+    var idStr = String(runId);
+    var blob = new Blob([idStr], { type: 'text/csv' });
+    var file = new File([blob], '__RUN_SWITCH__' + idStr + '.csv', { type: 'text/csv' });
+    var dt = new DataTransfer();
+    dt.items.add(file);
+    var setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files').set;
+    setter.call(input, dt.files);
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  } catch (e) { console.error('run switch failed', e); return false; }
+};
 """
     fetch_new = (
         f"window.__RAW_DATA = {json_str}; "
         f"window.__MAPE_SUMMARY = {mape_str}; "
+        f"window.__RUNS_LIST = {runs_str}; "
+        f"window.__CURRENT_RUN_ID = {json.dumps(current_run_id)}; "
         f"window.__SOURCE_LABEL = {json.dumps(source_label)}; "
         f"window.__LAST_ERROR = {json.dumps(last_error)}; "
         f"{bridge_js} "
@@ -726,14 +976,47 @@ window.__expandHostUploader = function() {
 
 
 # ---------------------------------------------------------------------------
-# Session state defaults
+# Session state defaults — prefer Supabase, fall back to bundled Excel.
 # ---------------------------------------------------------------------------
-if "records" not in st.session_state:
+def _bootstrap_session_state() -> None:
+    """Populate records / mape_summary / source_label / runs on first load.
+    Tries Supabase first; on any failure (no creds, network, etc.) falls
+    back to the bundled Excel and leaves a non-fatal note in last_error
+    so the user can see why."""
+    url, key = _supabase_creds()
+    if url and key:
+        try:
+            runs = _fetch_supabase_runs(url, key)
+            if runs:
+                latest = runs[0]
+                run_id = int(latest["id"])
+                records, mape_summary, run_meta = _load_supabase_run(url, key, run_id)
+                st.session_state.records = records
+                st.session_state.mape_summary = mape_summary
+                st.session_state.source_label = _supabase_source_label(run_meta)
+                st.session_state.runs_list = runs
+                st.session_state.current_run_id = run_id
+                st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+                return
+            # creds present but no runs — fall through to Excel
+            st.session_state.last_error = "Supabase returned 0 runs — using bundled data."
+        except Exception as exc:
+            # Don't block the app: degrade to the bundled Excel and surface the
+            # error so the user knows the live DB wasn't reachable.
+            st.session_state.last_error = f"Supabase unavailable ({exc.__class__.__name__}); using bundled data."
+
+    # Excel fallback
     all_data = load_default_records(DEFAULT_DATA.stat().st_mtime)
     st.session_state.records = all_data["monthly"]
     st.session_state.mape_summary = all_data["mape"]
     st.session_state.source_label = f"Bundled · {DEFAULT_DATA.name}"
+    st.session_state.runs_list = []
+    st.session_state.current_run_id = None
     st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+
+if "records" not in st.session_state:
+    _bootstrap_session_state()
 
 if "last_error" not in st.session_state:
     st.session_state.last_error = None
@@ -798,8 +1081,33 @@ if upload is not None:
         st.session_state.records = all_data["monthly"]
         st.session_state.mape_summary = all_data["mape"]
         st.session_state.source_label = f"Bundled · {DEFAULT_DATA.name}"
+        st.session_state.runs_list = []
+        st.session_state.current_run_id = None
         st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
         st.session_state.last_error = None
+    elif upload.name.startswith("__RUN_SWITCH__") and upload.name.endswith(".csv"):
+        # Switch to a different Supabase forecast run. Run id is in the file body.
+        try:
+            new_run_id = int(upload.getvalue().decode("utf-8", errors="ignore").strip())
+        except ValueError:
+            new_run_id = None
+        url, key = _supabase_creds()
+        if new_run_id is None or not (url and key):
+            st.session_state.last_error = "Could not switch run — bad run id or missing Supabase credentials."
+        else:
+            try:
+                records, mape_summary, run_meta = _load_supabase_run(url, key, new_run_id)
+                if not records:
+                    st.session_state.last_error = f"Run #{new_run_id} has no predictions."
+                else:
+                    st.session_state.records = records
+                    st.session_state.mape_summary = mape_summary
+                    st.session_state.source_label = _supabase_source_label(run_meta)
+                    st.session_state.current_run_id = new_run_id
+                    st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    st.session_state.last_error = None
+            except Exception as exc:
+                st.session_state.last_error = f"Failed to load run #{new_run_id}: {exc}"
     elif upload.name != "__LOGIN_ATTEMPT__.csv":
         recs, issues, mape_from_upload = parse_uploaded_records(upload.getvalue(), upload.name)
         if recs is None:
@@ -808,6 +1116,7 @@ if upload is not None:
             st.session_state.records = recs
             st.session_state.mape_summary = mape_from_upload
             st.session_state.source_label = f"Uploaded · {upload.name}"
+            st.session_state.current_run_id = None  # uploaded file is not a Supabase run
             st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
             st.session_state.last_error = None
 
@@ -819,5 +1128,7 @@ html_doc = build_html(
     st.session_state.source_label,
     last_error,
     mape_summary=st.session_state.get("mape_summary", []),
+    runs=st.session_state.get("runs_list", []),
+    current_run_id=st.session_state.get("current_run_id"),
 )
 components_html(html_doc, height=1100, scrolling=True)

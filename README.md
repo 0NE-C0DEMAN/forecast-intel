@@ -6,9 +6,12 @@ A Streamlit web app that wraps an existing inventory re-forecasting ML model wit
 
 The app is **password-gated**: a custom React/Babel login screen sits in front of the dashboard and reads the expected password from `st.secrets` (see *Configuration* below).
 
+**Data source:** the live forecast database is **Supabase** — the app reads `forecast_runs` + `forecast_predictions` tables directly via the anon key. A sidebar run picker lets the user switch between forecast runs (Future and Backtest). The bundled Excel is still supported as a fallback (used automatically if Supabase creds are missing or the DB is unreachable) and uploaded Excel/CSV files still work via the data-source modal.
+
 ## What it does
 
-- Reads a `Monthly_Predictions` sheet plus a `MAPE_Summary` sheet from an Excel workbook (or a CSV with the monthly columns).
+- Reads forecast runs from **Supabase** (`forecast_runs` + `forecast_predictions`) by default; falls back to an Excel `Monthly_Predictions` sheet (or matching CSV) if Supabase is unavailable.
+- The sidebar exposes a **Forecast Run picker** showing every run in Supabase with mode (Future/Backtest), predict year, item count, and average MAPE. Picking a run swaps the dashboard in place.
 - Renders a six-page navigation with deep analytics on each:
 
 ### Pages
@@ -75,23 +78,29 @@ streamlit run app.py
 
 Open <http://localhost:8501>.
 
-## Configuration — password gate
+## Configuration
 
-The app reads the gate password from `st.secrets`. Either form is accepted:
+Both the gate password and the Supabase credentials live in `st.secrets`. Locally, put them in `.streamlit/secrets.toml`; on Streamlit Cloud, paste the same block into **Settings → Secrets**.
 
 ```toml
 # .streamlit/secrets.toml
-password = "your-password"
+password     = "your-password"
+
+# Supabase forecast database (provided by the Tecscon dev team).
+supabase_url = "https://fittcpfhqdsjkrcfdvda.supabase.co"
+supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."   # anon key
 ```
 
-…or scoped under a section:
+The password may also be scoped under a section if you prefer:
 
 ```toml
 [auth]
 password = "your-password"
 ```
 
-For Streamlit Cloud, paste the same TOML into **Settings → Secrets**. The login screen is a self-contained React/Babel iframe matching the dashboard theme (Outfit font, indigo gradient logo, lock icon, password show/hide, animated rise + shake on error). The password is submitted through the existing `file_uploader` bridge using a sentinel filename, so no extra Streamlit widgets leak through to the dashboard.
+**Password gate.** The login screen is a self-contained React/Babel iframe matching the dashboard theme (Outfit font, indigo gradient logo, lock icon, password show/hide, animated rise + shake on error). The password is submitted through the host `file_uploader` bridge using a sentinel filename, so no extra Streamlit widgets leak through to the dashboard.
+
+**Supabase fallback.** If `supabase_url` or `supabase_key` is missing — or the DB call fails — the app silently falls back to the bundled Excel and surfaces a non-fatal banner so you know why.
 
 ## Upload format
 
@@ -117,5 +126,6 @@ Streamlit Cloud or any container host with Python 3.10+. The app pulls React/Bab
 
 ## Versions
 
+- **v3** — Supabase as the primary data source. Sidebar Forecast Run picker lets the user switch between Future/Backtest runs; the dashboard re-renders against the chosen run. Excel remains as a fallback when Supabase is unreachable or creds are missing.
 - **v2** — v4 schema swap (Bias Correction, APE, Months in MAPE), password gate with custom JSX login, six-page navigation (Line Items + Predictions + Model Accuracy + Item Forecasts + Item Explorer + Upload), MAPE split into Standard/HV cards with editable bucket thresholds, per-period APE in Item Forecasts, frozen-column scroll-through fix in Item Explorer.
 - **v1** — initial release.
