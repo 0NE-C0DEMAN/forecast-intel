@@ -268,13 +268,47 @@ function formatSourceLabel(runMeta) {
   return 'Supabase · ' + bits.join(' · ');
 }
 
+// localStorage cache for Supabase runs + per-run predictions. Stale-while-
+// revalidate: serve cached values instantly on mount, then refresh in the
+// background so the next interaction has fresh data. The cache key includes
+// the supabase project URL so swapping creds doesn't read the wrong cache.
+const CACHE_NS = 'fi.v1';
+function _cacheKey(suffix) {
+  const url = window.__SUPABASE_URL || 'noenv';
+  return `${CACHE_NS}|${url}|${suffix}`;
+}
+function readCache(suffix) {
+  try {
+    const raw = localStorage.getItem(_cacheKey(suffix));
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) { return null; }
+}
+function writeCache(suffix, value) {
+  try {
+    localStorage.setItem(_cacheKey(suffix), JSON.stringify({ ts: Date.now(), value }));
+  } catch (e) { /* quota / private mode — ignore */ }
+}
+
 function useSupabaseData() {
   // Initial state hydrated from server-rendered values for fast first paint.
-  const [runs, setRuns] = useState(() => window.__RUNS_LIST || []);
-  const [currentRunId, setCurrentRunId] = useState(() => window.__CURRENT_RUN_ID ?? null);
-  const [records, setRecords] = useState(() => window.__RAW_DATA || []);
-  const [mapeSummary, setMapeSummary] = useState(() => window.__MAPE_SUMMARY || []);
-  const [sourceLabel, setSourceLabel] = useState(() => window.__SOURCE_LABEL || '');
+  // If the server didn't provide data (e.g. cold deploy, no secrets), fall
+  // back to whatever we cached in localStorage from the previous visit so
+  // the user doesn't see an empty screen while we re-fetch.
+  const cachedRunsBlob = React.useRef(readCache('runs')).current;
+  const cachedRunId    = React.useRef(readCache('currentRunId')).current;
+  const initRuns       = (window.__RUNS_LIST && window.__RUNS_LIST.length) ? window.__RUNS_LIST : (cachedRunsBlob?.value || []);
+  const initRunId      = window.__CURRENT_RUN_ID ?? (cachedRunId?.value ?? null);
+  const cachedPredBlob = initRunId != null ? readCache(`pred|${initRunId}`) : null;
+  const initRecords    = (window.__RAW_DATA && window.__RAW_DATA.length) ? window.__RAW_DATA : (cachedPredBlob?.value?.records || []);
+  const initMape       = (window.__MAPE_SUMMARY && window.__MAPE_SUMMARY.length) ? window.__MAPE_SUMMARY : (cachedPredBlob?.value?.mapeSummary || []);
+  const initLabel      = window.__SOURCE_LABEL || cachedPredBlob?.value?.sourceLabel || '';
+
+  const [runs, setRuns] = useState(initRuns);
+  const [currentRunId, setCurrentRunId] = useState(initRunId);
+  const [records, setRecords] = useState(initRecords);
+  const [mapeSummary, setMapeSummary] = useState(initMape);
+  const [sourceLabel, setSourceLabel] = useState(initLabel);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -288,51 +322,123 @@ function useSupabaseData() {
     catch (e) { console.error('supabase client init failed', e); return null; }
   }, []);
 
+  // Paginated fetch for a single run's predictions. Pulled out so both
+  // switchRun and the background-refresh effect can share it.
+  const fetchPredictionsForRun = React.useCallback(async (runId, meta) => {
+    const all = [];
+    let offset = 0;
+    const PAGE = 1000;
+    while (true) {
+      const { data, error: err } = await client
+        .from('forecast_predictions')
+        .select('*')
+        .eq('run_id', runId)
+        .order('year_month')
+        .range(offset, offset + PAGE - 1);
+      if (err) throw err;
+      if (!data || !data.length) break;
+      all.push(...data);
+      if (data.length < PAGE) break;
+      offset += PAGE;
+    }
+    const recs = supabaseRowsToRecords(all);
+    const mape = synthMapeSummary(all, meta);
+    const label = formatSourceLabel(meta);
+    writeCache(`pred|${runId}`, { records: recs, mapeSummary: mape, sourceLabel: label });
+    return { recs, mape, label };
+  }, [client]);
+
   const switchRun = React.useCallback(async (runId) => {
     if (runId === currentRunId) return;
     if (!client) { setError('Supabase not configured'); return; }
-    setLoading(true);
     setError(null);
-    try {
-      // Paginated fetch — Supabase caps each request at 1000 rows.
-      const all = [];
-      let offset = 0;
-      const PAGE = 1000;
-      while (true) {
-        const { data, error: err } = await client
-          .from('forecast_predictions')
-          .select('*')
-          .eq('run_id', runId)
-          .order('year_month')
-          .range(offset, offset + PAGE - 1);
-        if (err) throw err;
-        if (!data || !data.length) break;
-        all.push(...data);
-        if (data.length < PAGE) break;
-        offset += PAGE;
-      }
-      const meta = runs.find(r => Number(r.id) === Number(runId)) || null;
-      setRecords(supabaseRowsToRecords(all));
-      setMapeSummary(synthMapeSummary(all, meta));
+    const meta = runs.find(r => Number(r.id) === Number(runId)) || null;
+    // Optimistic hydrate from cache — flips the dashboard instantly even
+    // when the network is slow. We still re-fetch in the background to
+    // keep the cache fresh.
+    const cached = readCache(`pred|${runId}`);
+    if (cached?.value?.records?.length) {
+      setRecords(cached.value.records);
+      setMapeSummary(cached.value.mapeSummary || []);
+      setSourceLabel(cached.value.sourceLabel || formatSourceLabel(meta));
       setCurrentRunId(runId);
-      setSourceLabel(formatSourceLabel(meta));
+      writeCache('currentRunId', runId);
+    } else {
+      setLoading(true);
+    }
+    try {
+      const { recs, mape, label } = await fetchPredictionsForRun(runId, meta);
+      setRecords(recs);
+      setMapeSummary(mape);
+      setSourceLabel(label);
+      setCurrentRunId(runId);
+      writeCache('currentRunId', runId);
     } catch (err) {
       console.error('switch run failed', err);
-      setError('Failed to load run #' + runId + ': ' + (err.message || 'unknown error'));
+      // If we had a cached copy showing, keep the dashboard usable instead
+      // of yanking it away with an error banner.
+      if (!cached?.value?.records?.length) {
+        setError('Failed to load run #' + runId + ': ' + (err.message || 'unknown error'));
+      }
     } finally {
       setLoading(false);
     }
-  }, [client, currentRunId, runs]);
+  }, [client, currentRunId, runs, fetchPredictionsForRun]);
+
+  // Background refresh on mount: re-fetch the runs list + the current run's
+  // predictions so the dashboard stays accurate even after we hydrated from
+  // a stale cache. Runs once per session.
+  React.useEffect(() => {
+    if (!client) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: freshRuns, error: rErr } = await client
+          .from('forecast_runs').select('*').order('run_timestamp', { ascending: false });
+        if (rErr) throw rErr;
+        if (cancelled || !freshRuns) return;
+        setRuns(freshRuns);
+        writeCache('runs', freshRuns);
+        const targetId = currentRunId ?? Number(freshRuns[0]?.id);
+        const meta = freshRuns.find(r => Number(r.id) === Number(targetId)) || freshRuns[0];
+        if (!meta) return;
+        const { recs, mape, label } = await fetchPredictionsForRun(meta.id, meta);
+        if (cancelled) return;
+        setRecords(recs);
+        setMapeSummary(mape);
+        setSourceLabel(label);
+        if (currentRunId == null) {
+          setCurrentRunId(meta.id);
+          writeCache('currentRunId', meta.id);
+        }
+      } catch (err) {
+        // Don't surface — the cached / server-rendered data is already
+        // showing. A console warning is enough.
+        console.warn('background refresh failed', err);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]);
 
   // When Streamlit reruns (Excel upload, login, reset), pull fresh values
-  // from the injected globals.
+  // from the injected globals AND mirror them into localStorage so the
+  // next page-load can hydrate from cache instantly.
   useEffect(() => {
     const handler = () => {
-      setRecords(window.__RAW_DATA || []);
-      setMapeSummary(window.__MAPE_SUMMARY || []);
-      setRuns(window.__RUNS_LIST || []);
-      setCurrentRunId(window.__CURRENT_RUN_ID ?? null);
-      setSourceLabel(window.__SOURCE_LABEL || '');
+      const recs = window.__RAW_DATA || [];
+      const mape = window.__MAPE_SUMMARY || [];
+      const rl   = window.__RUNS_LIST || [];
+      const rid  = window.__CURRENT_RUN_ID ?? null;
+      const lbl  = window.__SOURCE_LABEL || '';
+      setRecords(recs);
+      setMapeSummary(mape);
+      setRuns(rl);
+      setCurrentRunId(rid);
+      setSourceLabel(lbl);
+      if (rl.length) writeCache('runs', rl);
+      if (rid != null) writeCache('currentRunId', rid);
+      if (rid != null && recs.length) writeCache(`pred|${rid}`, { records: recs, mapeSummary: mape, sourceLabel: lbl });
     };
     window.addEventListener('dataready', handler);
     return () => window.removeEventListener('dataready', handler);
