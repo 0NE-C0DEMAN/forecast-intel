@@ -922,7 +922,9 @@ function AccuracyTab({ periodGroups, allData }) {
 
 function ItemsTableTab({ data, allPeriods, standalone }) {
   const [tablePage, setTablePage] = useState(0);
-  const [sortCol, setSortCol] = useState('quantity');
+  // Default to sorting by Period (newest first). Within the same period,
+  // larger quantities float to the top as a natural secondary sort.
+  const [sortCol, setSortCol] = useState('period');
   const [sortDir, setSortDir] = useState('desc');
   const [actionFilter, setActionFilter] = useState('All');
   const [search, setSearch] = useState('');
@@ -964,7 +966,20 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
       let va = a[sortCol], vb = b[sortCol];
       if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb || '').toLowerCase(); }
       if (va == null) va = -Infinity; if (vb == null) vb = -Infinity;
-      return sortDir === 'asc' ? (va < vb ? -1 : va > vb ? 1 : 0) : (va > vb ? -1 : va < vb ? 1 : 0);
+      const primary = sortDir === 'asc' ? (va < vb ? -1 : va > vb ? 1 : 0) : (va > vb ? -1 : va < vb ? 1 : 0);
+      if (primary !== 0) return primary;
+      // Stable secondary sort so equal-primary rows aren't randomly ordered.
+      // When sorting by Period, fall back to quantity desc (biggest movement
+      // within the same month at the top); otherwise fall back to Period desc
+      // so the same item's history reads chronologically.
+      if (sortCol === 'period') {
+        const qa = a.quantity == null ? -Infinity : a.quantity;
+        const qb = b.quantity == null ? -Infinity : b.quantity;
+        return qb - qa;
+      }
+      const pa = a.period || '';
+      const pb = b.period || '';
+      return pb.localeCompare(pa);
     });
     return arr;
   }, [filtered, sortCol, sortDir]);
