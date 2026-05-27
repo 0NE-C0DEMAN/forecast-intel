@@ -592,26 +592,39 @@ function RichDetailPanel({ item, abc, onClose, ac, abg, fmt, cohortMeta }) {
         </svg>
       </div>
 
-      {/* Action ribbon — based on ACTUAL action (falls back to a neutral cell when actuals aren't in yet) */}
+      {/* Action ribbon — based on ACTUAL action (falls back to a neutral cell when actuals aren't in yet).
+          Each cell is at least 20px wide so the D/R/N letter stays legible
+          even on multi-year backtests. When the ribbon outgrows its parent
+          width it scrolls horizontally via the themed h-scroller. */}
       <div>
         <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: 'var(--text-2)' }}>Action History <span style={{ fontWeight: 500, color: 'var(--text-3)', fontSize: 10 }}>· actuals</span></div>
-        <svg width="100%" height={ribbonH} viewBox={`0 0 ${w} ${ribbonH}`} style={{ display: 'block' }}>
-          {series.map((p, i) => {
-            const xp = i * cellW;
-            const a = p.actualAction;
-            const hasActual = a != null;
-            const letter = a === 'Deliver' ? 'D' : a === 'Return' ? 'R' : a === 'No Change' ? 'N' : '—';
-            const fill = hasActual ? ac(a) : '#E5E7EB';
-            const op = !hasActual ? 1 : (a === 'No Change' ? .3 : .85);
-            const textCol = hasActual ? '#fff' : 'var(--text-3)';
-            return (
-              <g key={p.period} title={`${fmtPeriod(p.period)}: ${hasActual ? a : 'no actual yet'}`}>
-                <rect x={xp + 0.5} y={0} width={Math.max(cellW - 1, 1)} height={ribbonH} fill={fill} opacity={op} rx={2} />
-                {cellW >= 16 && <text x={xp + cellW / 2} y={ribbonH / 2 + 4} textAnchor="middle" fontSize="11" fontWeight="700" fill={textCol}>{letter}</text>}
-              </g>
-            );
-          })}
-        </svg>
+        {(() => {
+          const cellMin = 20;
+          const ribbonW = Math.max(w, series.length * cellMin);
+          const cw = ribbonW / series.length;
+          return (
+            <div className="h-scroller">
+              <svg width={ribbonW} height={ribbonH} viewBox={`0 0 ${ribbonW} ${ribbonH}`} style={{ display: 'block' }}>
+                {series.map((p, i) => {
+                  const xp = i * cw;
+                  const a = p.actualAction;
+                  const hasActual = a != null;
+                  const letter = a === 'Deliver' ? 'D' : a === 'Return' ? 'R' : a === 'No Change' ? 'N' : '—';
+                  const fill = hasActual ? ac(a) : '#E5E7EB';
+                  const op = !hasActual ? 1 : (a === 'No Change' ? .3 : .85);
+                  const textCol = hasActual ? '#fff' : 'var(--text-3)';
+                  return (
+                    <g key={p.period}>
+                      <title>{`${fmtPeriod(p.period)}: ${hasActual ? a : 'no actual yet'}`}</title>
+                      <rect x={xp + 0.5} y={0} width={Math.max(cw - 1, 1)} height={ribbonH} fill={fill} opacity={op} rx={2} />
+                      {cw >= 16 && <text x={xp + cw / 2} y={ribbonH / 2 + 4} textAnchor="middle" fontSize="11" fontWeight="700" fill={textCol}>{letter}</text>}
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
+          );
+        })()}
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--mono)', marginTop: 4 }}>
           <span>{fmtPeriod(series[0].period)}</span>
           {series.length > 4 && <span>{fmtPeriod(series[Math.floor(series.length / 2)].period)}</span>}

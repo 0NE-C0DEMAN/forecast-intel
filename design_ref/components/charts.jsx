@@ -1288,7 +1288,7 @@ function PortfolioActualVsPredicted({ periodGroups }) {
         Aggregate closing balance: predicted (indigo) vs actual (amber) per period.
         {!hasAnyActual && ' Actual data not yet available.'}
       </div>
-      <div style={{ overflowX: 'auto' }}>
+      <div className="h-scroller">
       <svg width={tW} height={sH} viewBox={`0 0 ${tW} ${sH}`} style={{ display: 'block' }}>
         {[0, .25, .5, .75, 1].map((p, i) => {
           const y = padT + cH - cH * p;

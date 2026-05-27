@@ -1022,18 +1022,39 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
           {search && <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 7, top: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 14, lineHeight: 1 }}>×</button>}
         </div>
 
-        {/* Period filter (standalone view only) */}
+        {/* Period filter (standalone view only).
+            Up to 6 periods: pill strip inline.
+            More than 6: PeriodSelector dropdown (chevrons + searchable list)
+            so a 24- or 36-month backtest doesn't push everything off-screen. */}
         {standalone && periods.length > 1 && (
-          <div style={{ display: 'flex', background: 'var(--surface-2)', borderRadius: 8, padding: 2, gap: 2 }}>
-            {['All', ...periods].map(p => (
-              <button key={p} onClick={() => setPeriodFilter(p)} style={{
+          periods.length > 6 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surface-2)', borderRadius: 8, padding: '2px 4px 2px 2px' }}>
+              <button onClick={() => setPeriodFilter('All')} style={{
                 padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)',
-                background: periodFilter === p ? '#fff' : 'transparent',
-                color: periodFilter === p ? 'var(--accent)' : 'var(--text-3)',
-                boxShadow: periodFilter === p ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
-              }}>{p === 'All' ? 'All periods' : fmtPeriod(p)}</button>
-            ))}
-          </div>
+                background: periodFilter === 'All' ? '#fff' : 'transparent',
+                color: periodFilter === 'All' ? 'var(--accent)' : 'var(--text-3)',
+                boxShadow: periodFilter === 'All' ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
+                whiteSpace: 'nowrap',
+              }}>All periods</button>
+              <PeriodSelector
+                value={periodFilter === 'All' ? periods[periods.length - 1] : periodFilter}
+                onChange={(p) => setPeriodFilter(p)}
+                options={periods}
+              />
+            </div>
+          ) : (
+            <div style={{ display: 'flex', background: 'var(--surface-2)', borderRadius: 8, padding: 2, gap: 2 }}>
+              {['All', ...periods].map(p => (
+                <button key={p} onClick={() => setPeriodFilter(p)} style={{
+                  padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)',
+                  background: periodFilter === p ? '#fff' : 'transparent',
+                  color: periodFilter === p ? 'var(--accent)' : 'var(--text-3)',
+                  boxShadow: periodFilter === p ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
+                  whiteSpace: 'nowrap',
+                }}>{p === 'All' ? 'All periods' : fmtPeriod(p)}</button>
+              ))}
+            </div>
+          )
         )}
 
         {/* Action filter */}
