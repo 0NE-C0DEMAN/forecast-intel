@@ -6,7 +6,7 @@ A Streamlit web app that wraps an existing inventory re-forecasting ML model wit
 
 The app is **password-gated**: a custom React/Babel login screen sits in front of the dashboard and reads the expected password from `st.secrets` (see *Configuration* below).
 
-**Data source:** the live forecast database is **Supabase** — the app reads `forecast_runs` + `forecast_predictions` tables directly via the anon key. A sidebar run picker lets the user switch between forecast runs (Future and Backtest). The bundled Excel is still supported as a fallback (used automatically if Supabase creds are missing or the DB is unreachable) and uploaded Excel/CSV files still work via the data-source modal.
+**Data source:** the live forecast database is **Supabase** — the app reads `forecast_runs` + `forecast_predictions` tables directly via the anon key. A sidebar run picker lets the user switch between forecast runs (Future and Backtest). User-uploaded Excel/CSV files still work via the data-source modal for ad-hoc analysis. The previously bundled Excel has been removed from the repo; if `supabase_url` / `supabase_key` aren't set, the dashboard shows an empty-state toast pointing the user at Settings → Secrets.
 
 ## What it does
 
@@ -25,7 +25,7 @@ The app is **password-gated**: a custom React/Babel login screen sits in front o
 - **Model Accuracy** — Direction Accuracy ring, MAPE distribution split into Standard items vs High-Value items (with editable bucket thresholds), Portfolio Predicted vs Actual closing-balance series, and the workbook's MAPE Summary table.
 - **Item Forecasts** — a card grid (one card per SKU) showing the multi-period forecast trajectory and recent actuals for each item, with per-period APE labels and an x-axis-only zoom.
 - **Item Explorer** — search any SKU, drill into its detail panel with cohort tagging (always-deliver / always-return / volatile / dormant / at-risk / stable). The frozen Item column has a scroll-aware mask that prevents partial cells from bleeding past the sticky boundary.
-- **Upload Data** — drop a new Excel/CSV; the dashboard re-renders against it. Only the Monthly sheet is read; if the file also has a `MAPE_Summary` sheet, the monthly rows from it are picked up too.
+- **Upload Data** — drop a new Excel/CSV for ad-hoc analysis; the dashboard re-renders against it. Only the Monthly sheet is read; if the file also has a `MAPE_Summary` sheet, the monthly rows from it are picked up too.
 
 Every chart card has a maximize button that pops it into a larger modal.
 
@@ -48,8 +48,10 @@ Every chart card has a maximize button that pops it into a larger modal.
 │       ├── insights.jsx
 │       ├── upload.jsx
 │       └── datasource.jsx
-└── Forecast_26_Jan_Feb_Results_v4.xlsx                 # Bundled forecast data (default source)
+└── README.md
 ```
+
+Data lives in Supabase (`forecast_runs` + `forecast_predictions`); no `.xlsx` is bundled in the repo any more.
 
 ## How the architecture works
 

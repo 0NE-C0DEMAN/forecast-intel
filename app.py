@@ -1012,11 +1012,26 @@ def _bootstrap_session_state() -> None:
             # error so the user knows the live DB wasn't reachable.
             st.session_state.last_error = f"Supabase unavailable ({exc.__class__.__name__}); using bundled data."
 
-    # Excel fallback
-    all_data = load_default_records(DEFAULT_DATA.stat().st_mtime)
-    st.session_state.records = all_data["monthly"]
-    st.session_state.mape_summary = all_data["mape"]
-    st.session_state.source_label = f"Bundled · {DEFAULT_DATA.name}"
+    # Excel fallback — only if the bundled file exists. Once the app is
+    # running fully off Supabase we drop the xlsx from the repo, so this
+    # branch is just a safety net for local dev.
+    if DEFAULT_DATA.exists():
+        all_data = load_default_records(DEFAULT_DATA.stat().st_mtime)
+        st.session_state.records = all_data["monthly"]
+        st.session_state.mape_summary = all_data["mape"]
+        st.session_state.source_label = f"Bundled · {DEFAULT_DATA.name}"
+    else:
+        # Nothing to fall back to — render an empty dashboard and explain why
+        # in the toast so the user knows to configure Supabase creds.
+        st.session_state.records = []
+        st.session_state.mape_summary = []
+        st.session_state.source_label = "No data — configure Supabase in Settings → Secrets"
+        if not st.session_state.get("last_error"):
+            st.session_state.last_error = (
+                "Supabase credentials missing and no bundled Excel found — set "
+                "supabase_url + supabase_key in .streamlit/secrets.toml (or "
+                "Streamlit Cloud Settings → Secrets)."
+            )
     st.session_state.runs_list = []
     st.session_state.current_run_id = None
     st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -1084,14 +1099,39 @@ st.markdown(_DASHBOARD_CSS, unsafe_allow_html=True)
 
 if upload is not None:
     if upload.name == "__RESET_TO_BUNDLED__.csv":
-        all_data = load_default_records(DEFAULT_DATA.stat().st_mtime)
-        st.session_state.records = all_data["monthly"]
-        st.session_state.mape_summary = all_data["mape"]
-        st.session_state.source_label = f"Bundled · {DEFAULT_DATA.name}"
-        st.session_state.runs_list = []
-        st.session_state.current_run_id = None
-        st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-        st.session_state.last_error = None
+        # "Reset" now means "go back to the latest Supabase run" — the
+        # bundled Excel is no longer shipped in the repo. Fall back to
+        # the Excel only if a developer dropped one in locally.
+        url, key = _supabase_creds()
+        if url and key:
+            try:
+                runs = _fetch_supabase_runs(url, key)
+                if runs:
+                    latest = runs[0]
+                    rid = int(latest["id"])
+                    records, mape_summary, run_meta = _load_supabase_run(url, key, rid)
+                    st.session_state.records = records
+                    st.session_state.mape_summary = mape_summary
+                    st.session_state.source_label = _supabase_source_label(run_meta)
+                    st.session_state.runs_list = runs
+                    st.session_state.current_run_id = rid
+                    st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    st.session_state.last_error = None
+                else:
+                    st.session_state.last_error = "Supabase has no runs to reset to."
+            except Exception as exc:
+                st.session_state.last_error = f"Could not reset from Supabase: {exc}"
+        elif DEFAULT_DATA.exists():
+            all_data = load_default_records(DEFAULT_DATA.stat().st_mtime)
+            st.session_state.records = all_data["monthly"]
+            st.session_state.mape_summary = all_data["mape"]
+            st.session_state.source_label = f"Bundled · {DEFAULT_DATA.name}"
+            st.session_state.runs_list = []
+            st.session_state.current_run_id = None
+            st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+            st.session_state.last_error = None
+        else:
+            st.session_state.last_error = "Nothing to reset to — Supabase not configured and no bundled Excel."
     elif upload.name.startswith("__RUN_SWITCH__") and upload.name.endswith(".csv"):
         # Switch to a different Supabase forecast run. Run id is in the file body.
         try:
