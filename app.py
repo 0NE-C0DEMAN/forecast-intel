@@ -943,6 +943,11 @@ window.__switchRun = function(runId) {
   } catch (e) { console.error('run switch failed', e); return false; }
 };
 """
+    # SUPABASE_URL / SUPABASE_KEY are exposed to the iframe so the React
+    # side can use supabase-js directly for run switching (no Streamlit
+    # rerun, no iframe reload). The anon key is meant for client-side use
+    # — RLS is enforced server-side, the key just identifies the project.
+    sb_url, sb_key = _supabase_creds()
     fetch_new = (
         f"window.__RAW_DATA = {json_str}; "
         f"window.__MAPE_SUMMARY = {mape_str}; "
@@ -950,6 +955,8 @@ window.__switchRun = function(runId) {
         f"window.__CURRENT_RUN_ID = {json.dumps(current_run_id)}; "
         f"window.__SOURCE_LABEL = {json.dumps(source_label)}; "
         f"window.__LAST_ERROR = {json.dumps(last_error)}; "
+        f"window.__SUPABASE_URL = {json.dumps(sb_url)}; "
+        f"window.__SUPABASE_KEY = {json.dumps(sb_key)}; "
         f"{bridge_js} "
         "setTimeout(() => window.dispatchEvent(new Event('dataready')), 0);"
     )

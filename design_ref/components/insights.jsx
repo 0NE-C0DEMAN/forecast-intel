@@ -312,8 +312,8 @@ function ActionCalendarHeatmap({ data }) {
         <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{items.length} items × {periods.length} periods</span>
       </div>
 
-      {/* Grid */}
-      <div style={{ overflow: 'auto', maxHeight: 660, position: 'relative', border: '1px solid var(--border)', borderRadius: 10 }}>
+      {/* Grid — themed scroller so horizontal overflow with many periods is obvious */}
+      <div className="h-scroller" style={{ maxHeight: 660, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
         <table style={{ borderCollapse: 'separate', borderSpacing: 2, fontSize: 11, tableLayout: 'fixed' }}>
           <thead>
             <tr>

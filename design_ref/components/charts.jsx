@@ -424,7 +424,10 @@ function ItemForecastCard({ item }) {
     const fmtPeriodFull = (p) => { const m = p.split('-')[1]; const y = p.split('-')[0]; const ns = ['','January','February','March','April','May','June','July','August','September','October','November','December']; return `${ns[parseInt(m)] || ''} ${y}`; };
 
     return (
-      <div style={{ overflowX: 'auto', overflowY: 'visible', position: 'relative' }}>
+      // h-scroller: themed horizontal scrollbar (defined in main HTML).
+      // Scroll kicks in cleanly whenever a run has more periods than the
+      // card width can hold.
+      <div className="h-scroller">
         {/* HTML hover tooltip — pinned at top, free to extend past SVG bounds */}
         {hoverIdx != null && periods[hoverIdx] && (() => {
           const p = periods[hoverIdx];
@@ -834,7 +837,7 @@ function ActionCountBars({ periodGroups }) {
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>Item count per action across {periodCount} period{periodCount === 1 ? '' : 's'}.</div>
-      <div style={{ overflowX: 'auto' }}>
+      <div className="h-scroller">
       <svg width={tW} height={sH} viewBox={`0 0 ${tW} ${sH}`} style={{ display: 'block' }}>
         {[0,.25,.5,.75,1].map((p,i) => { const y = pT + cH - cH * p; return <g key={i}><line x1={pL} y1={y} x2={tW-12} y2={y} stroke="#F3F4F6"/><text x={pL-8} y={y+3.5} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(max*p)}</text></g>; })}
         {data.map((row, gi) => {
@@ -960,7 +963,7 @@ function HVMovementByPeriod({ periodGroups }) {
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>Deliver and Return counts per period, stacked by HV (dark) vs Standard (light).</div>
-      <div style={{ overflowX: 'auto' }}>
+      <div className="h-scroller">
       <svg width={tW} height={sH} viewBox={`0 0 ${tW} ${sH}`} style={{ display: 'block' }}>
         {[0,.25,.5,.75,1].map((p,i) => { const y = pT + cH - cH * p; return <g key={i}><line x1={pL} y1={y} x2={tW-12} y2={y} stroke="#F3F4F6"/><text x={pL-8} y={y+3.5} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(max*p)}</text></g>; })}
         {data.map((row, gi) => {

@@ -126,6 +126,7 @@ Streamlit Cloud or any container host with Python 3.10+. The app pulls React/Bab
 
 ## Versions
 
+- **v4** — Full SPA architecture. React talks to Supabase directly via `supabase-js` (loaded from unpkg) so run switching is instant — no Streamlit rerun, no iframe reload. Python pre-fetches the latest run on initial paint and then hands off to React. Themed horizontal scroll on charts/timelines for runs with many periods. Insights cards: removed coloured left strip for a cleaner uniform look.
 - **v3** — Supabase as the primary data source. Sidebar Forecast Run picker lets the user switch between Future/Backtest runs; the dashboard re-renders against the chosen run. Excel remains as a fallback when Supabase is unreachable or creds are missing.
 - **v2** — v4 schema swap (Bias Correction, APE, Months in MAPE), password gate with custom JSX login, six-page navigation (Line Items + Predictions + Model Accuracy + Item Forecasts + Item Explorer + Upload), MAPE split into Standard/HV cards with editable bucket thresholds, per-period APE in Item Forecasts, frozen-column scroll-through fix in Item Explorer.
 - **v1** — initial release.

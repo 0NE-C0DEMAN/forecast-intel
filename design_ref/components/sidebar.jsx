@@ -1,29 +1,36 @@
 /* Sidebar component — light theme */
 
-function RunPicker({ collapsed }) {
-  // Live forecast-run picker. Reads window.__RUNS_LIST + window.__CURRENT_RUN_ID
-  // (populated by the Python side from Supabase) and submits a switch through
-  // window.__switchRun(id) — the host file_uploader bridge handles the rest.
-  const runs = (typeof window !== 'undefined' && window.__RUNS_LIST) || [];
-  const currentId = (typeof window !== 'undefined' && window.__CURRENT_RUN_ID) || null;
+function RunPicker({ collapsed, runs, currentRunId, onSwitchRun, switching }) {
+  // Forecast-run picker. Run switching is now pure React — onSwitchRun is
+  // wired to a Supabase fetch in the parent App component, so there's no
+  // Streamlit rerun and no iframe reload.
+  const safeRuns = runs || [];
+  const currentId = currentRunId;
   const [open, setOpen] = React.useState(false);
-  const [switching, setSwitching] = React.useState(null);
+  const [pendingId, setPendingId] = React.useState(null);
   const ref = React.useRef(null);
   React.useEffect(() => {
     function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
-  if (!runs.length || collapsed) return null;
-  const current = runs.find(r => Number(r.id) === Number(currentId)) || runs[0];
+  // When the parent finishes loading, clear local pending state + close dropdown.
+  const wasSwitching = React.useRef(switching);
+  React.useEffect(() => {
+    if (wasSwitching.current && !switching) {
+      setPendingId(null);
+      setOpen(false);
+    }
+    wasSwitching.current = switching;
+  }, [switching]);
+  if (!safeRuns.length || collapsed) return null;
+  const current = safeRuns.find(r => Number(r.id) === Number(currentId)) || safeRuns[0];
   const fmtTs = (ts) => (ts || '').slice(0, 10).replace('T', ' ');
   const modeColor = (m) => m === 'Backtest' ? '#059669' : '#6366F1';
   const handle = (id) => {
     if (id === currentId || switching) return;
-    setSwitching(id);
-    if (typeof window !== 'undefined' && window.__switchRun) {
-      window.__switchRun(id);
-    }
+    setPendingId(id);
+    if (onSwitchRun) onSwitchRun(id);
   };
   return (
     <div ref={ref} style={{ padding: '0 10px 6px', position: 'relative' }}>
@@ -65,9 +72,9 @@ function RunPicker({ collapsed }) {
           boxShadow: '0 12px 28px rgba(15,23,42,.10), 0 2px 4px rgba(15,23,42,.04)',
           zIndex: 50, overflow: 'hidden', maxHeight: 320, overflowY: 'auto',
         }}>
-          {runs.map(r => {
+          {safeRuns.map(r => {
             const sel = Number(r.id) === Number(currentId);
-            const isSw = switching === r.id;
+            const isSw = Number(pendingId) === Number(r.id) && switching;
             const mc = modeColor(r.forecast_mode);
             return (
               <button key={r.id} onClick={() => handle(r.id)} disabled={sel || switching}
@@ -114,7 +121,7 @@ function RunPicker({ collapsed }) {
   );
 }
 
-function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDataSource, itemCount }) {
+function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDataSource, itemCount, runs, currentRunId, onSwitchRun, switching }) {
   const nav = [
     { id: 'lineitems', label: 'Line Items', icon: 'list' },
     { id: 'predictions', label: 'Predictions', icon: 'chart' },
@@ -195,7 +202,7 @@ function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDa
         </button>
       </div>
 
-      <RunPicker collapsed={collapsed} />
+      <RunPicker collapsed={collapsed} runs={runs} currentRunId={currentRunId} onSwitchRun={onSwitchRun} switching={switching} />
 
       <nav style={{ flex: 1, padding: '4px 8px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
         {!collapsed && <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '8px 12px 4px' }}>Dashboard</div>}
