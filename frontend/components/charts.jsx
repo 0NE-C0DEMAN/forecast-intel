@@ -280,12 +280,14 @@ function BalanceScatter({ data }) {
 function ModelAccuracyTable({ periodGroups, modelLabel }) {
   // Filter to Monthly only — quarterly/half-yearly not used in this app
   const mapeData = (window.__MAPE_SUMMARY || []).filter(r => (r.model || '').toLowerCase().startsWith('month'));
-  const thS = { padding: '10px 14px', textAlign: 'left', fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: '2px solid var(--border)', background: '#FAFBFC' };
-  const tdS = { padding: '10px 14px', fontSize: 13, borderBottom: '1px solid #F3F4F6' };
+  // Tighter cell sizing + smaller font so the table can fit a long list of
+  // periods at the height of the chart next to it on Model Accuracy.
+  const thS = { padding: '6px 10px', textAlign: 'left', fontSize: 9, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: '2px solid var(--border)', background: '#FAFBFC', whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 1 };
+  const tdS = { padding: '6px 10px', fontSize: 11, borderBottom: '1px solid #F3F4F6', whiteSpace: 'nowrap' };
   const mapeColor = (v) => v == null ? 'var(--text-3)' : v > 100 ? '#DC2626' : v > 50 ? '#D97706' : '#059669';
 
-    const rows = mapeData.length > 0 ? mapeData : periodGroups.map(pg => ({
-      period: pg.period, model: modelLabel || 'Forecast',
+  const rows = mapeData.length > 0 ? mapeData : periodGroups.map(pg => ({
+    period: pg.period, model: modelLabel || 'Forecast',
     mapeAll: null, mapeHV: null,
     itemsPredicted: pg.data.length,
     itemsDeliver: pg.data.filter(d => d.predictedAction === 'Deliver').length,
@@ -298,8 +300,10 @@ function ModelAccuracyTable({ periodGroups, modelLabel }) {
       <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 10 }}>
         Model accuracy summary from MAPE_Summary sheet. Lower MAPE = better accuracy.
       </div>
-      <div style={{ borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      {/* Both axes scroll. Height is matched to the Portfolio chart next to
+          us (~340px usable: SVG padT 14 + cH 280 + padB 44 + chrome). */}
+      <div className="h-scroller" style={{ borderRadius: 10, border: '1px solid var(--border)', maxHeight: 348, overflowY: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', minWidth: '100%' }}>
           <thead>
             <tr>
               <th style={thS}>Period</th>
@@ -315,7 +319,7 @@ function ModelAccuracyTable({ periodGroups, modelLabel }) {
           <tbody>
             {rows.map((r, i) => (
               <tr key={i}>
-                <td style={{ ...tdS, fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 12 }}>{r.period}</td>
+                <td style={{ ...tdS, fontFamily: 'var(--mono)', fontWeight: 700 }}>{r.period}</td>
                 <td style={{ ...tdS, fontWeight: 500 }}>{r.model}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: mapeColor(r.mapeAll) }}>
                   {r.mapeAll != null ? r.mapeAll.toFixed(1) + '%' : '—'}
@@ -1274,7 +1278,9 @@ function PortfolioActualVsPredicted({ periodGroups }) {
   const fmtK = v => v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'K' : Math.round(v).toLocaleString();
   const fmt = p => { const [y, m] = p.split('-'); const names = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[parseInt(m)]} '${y.slice(2)}`; };
 
-  const barW = 30, barGap = 6, groupGap = 28, cH = 160, padL = 56, padT = 14, padB = 44;
+  // Taller chart area (cH) so the bars match the height of the MAPE summary
+  // table next to it on the Model Accuracy page.
+  const barW = 30, barGap = 6, groupGap = 28, cH = 280, padL = 56, padT = 14, padB = 44;
   const groupW = barW * 2 + barGap + groupGap;
   const tW = padL + bars.length * groupW + 20;
   const sH = padT + cH + padB;
