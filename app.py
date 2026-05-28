@@ -708,22 +708,15 @@ def _fetch_supabase_predictions(url: str, key: str, run_id: int) -> list[dict]:
 
 def _supabase_to_records(pred_rows: list[dict]) -> list[dict]:
     """Convert Supabase prediction rows into the JSON record shape the React
-    UI expects. Computes the derived fields the Supabase schema doesn't store
-    (Tier, Difference, Diff of Actual to Prediction, actualAction,
-    directionCorrect, Item MAPE, Months in MAPE)."""
+    UI expects.
+
+    As of 2026-05-28 the schema stores every Excel column directly, so we no
+    longer derive Tier / Difference / Actual Action / Direction Correct /
+    Item MAPE / Months in MAPE / Bias Correction on the client. We just map
+    the column names through. The per-row `forecast_mode` flag is also
+    carried over so the UI can render a continuous Backtest+Future view."""
     if not pred_rows:
         return []
-
-    df = pd.DataFrame(pred_rows)
-
-    # Per-item aggregates over the full run for itemMape / mapeMonths.
-    if "mape" in df.columns:
-        mape_by_item = df.groupby("item_code")["mape"].agg(
-            item_mape="mean",
-            mape_months=lambda s: int(s.notna().sum()),
-        )
-    else:
-        mape_by_item = pd.DataFrame(columns=["item_mape", "mape_months"])
 
     def fnum(v):
         if v is None or (isinstance(v, float) and pd.isna(v)):
@@ -738,53 +731,41 @@ def _supabase_to_records(pred_rows: list[dict]) -> list[dict]:
             return None
         return str(v).strip()
 
+    def fbool(v):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return None
+        return bool(v)
+
+    def fint(v):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return None
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+
     records: list[dict] = []
     for r in pred_rows:
-        prev = fnum(r.get("prev_closing_bal"))
-        pred = fnum(r.get("pred_closing_balance"))
-        actual = fnum(r.get("actual_closing_balance"))
-        pred_action = ftext(r.get("pred_action"))
-        is_hv = bool(r.get("is_high_value"))
-
-        # Derived fields the Supabase schema doesn't store directly.
-        actual_action = _classify_action((actual - prev) if (actual is not None and prev is not None) else None)
-        direction_correct = (
-            (pred_action == actual_action)
-            if (pred_action and actual_action)
-            else None
-        )
-        diff_actual_pred = (actual - pred) if (actual is not None and pred is not None) else None
-        difference = (pred - prev) if (pred is not None and prev is not None) else None
-
-        code = ftext(r.get("item_code"))
-        # itemMape / mapeMonths from the per-item aggregate.
-        if code in mape_by_item.index:
-            item_mape = mape_by_item.at[code, "item_mape"]
-            item_mape = None if pd.isna(item_mape) else float(item_mape)
-            mape_months = mape_by_item.at[code, "mape_months"]
-            mape_months = None if pd.isna(mape_months) else int(mape_months)
-        else:
-            item_mape, mape_months = None, None
-
         records.append({
-            "itemCode": code,
+            "itemCode": ftext(r.get("item_code")),
             "description": ftext(r.get("item_description")),
-            "isHV": is_hv,
-            "tier": "HV" if is_hv else "Standard",
+            "isHV": bool(r.get("is_high_value")),
+            "tier": ftext(r.get("tier")),
             "period": ftext(r.get("year_month")),
-            "prevClosingBal": prev,
-            "predictedClosingBal": pred,
-            "actualClosingBal": actual,
-            "error": diff_actual_pred,
-            "difference": difference,
-            "predictedAction": pred_action,
-            "actualAction": actual_action,
-            "directionCorrect": direction_correct,
+            "prevClosingBal": fnum(r.get("prev_closing_bal")),
+            "predictedClosingBal": fnum(r.get("pred_closing_balance")),
+            "actualClosingBal": fnum(r.get("actual_closing_balance")),
+            "error": fnum(r.get("diff_actual_to_prediction")),
+            "difference": fnum(r.get("difference")),
+            "predictedAction": ftext(r.get("pred_action")),
+            "actualAction": ftext(r.get("actual_action")),
+            "directionCorrect": fbool(r.get("direction_correct")),
             "quantity": fnum(r.get("action_quantity")),
-            "biasCorrection": None,  # not stored in Supabase
-            "ape": fnum(r.get("mape")),
-            "itemMape": item_mape,
-            "mapeMonths": mape_months,
+            "biasCorrection": fnum(r.get("bias_correction_applied")),
+            "ape": fnum(r.get("ape")),
+            "itemMape": fnum(r.get("item_mape")),
+            "mapeMonths": fint(r.get("months_in_mape")),
+            "forecastMode": ftext(r.get("forecast_mode")),
         })
     return records
 
@@ -819,14 +800,131 @@ def _synth_mape_summary(pred_rows: list[dict], run: dict | None) -> list[dict]:
     return out
 
 
+@st.cache_data(show_spinner=False, ttl=300)
+def _fetch_supabase_predictions_by_year(url: str, key: str, year: int) -> list[dict]:
+    """Paginated fetch of every prediction row whose `year_month` falls in
+    the given year. Backtest and Future runs both contribute — the per-row
+    `forecast_mode` column distinguishes them."""
+    client = _supabase_client(url, key)
+    all_rows: list[dict] = []
+    offset = 0
+    PAGE = 1000
+    lo = f"{year}-01"
+    hi = f"{year}-12"
+    while True:
+        resp = (
+            client.table("forecast_predictions")
+            .select("*")
+            .gte("year_month", lo)
+            .lte("year_month", hi)
+            .order("year_month")
+            .range(offset, offset + PAGE - 1)
+            .execute()
+        )
+        page = list(resp.data or [])
+        if not page:
+            break
+        all_rows.extend(page)
+        if len(page) < PAGE:
+            break
+        offset += PAGE
+    return all_rows
+
+
+def _years_summary(runs: list[dict], predictions_by_year: dict[int, list[dict]] | None = None) -> list[dict]:
+    """Group runs by `predict_year` and roll up each year's metadata for the
+    sidebar picker. Optionally consumes already-fetched predictions per year
+    to fill in exact period count + per-mode item counts; falls back to the
+    run-level summary fields otherwise."""
+    by_year: dict[int, dict] = {}
+    for r in runs:
+        y = r.get("predict_year")
+        if y is None:
+            continue
+        y = int(y)
+        slot = by_year.setdefault(y, {
+            "year": y,
+            "run_ids": [],
+            "modes": [],
+            "total_items": 0,
+            "hv_item_count": 0,
+            "avg_mape": None,
+            "latest_ts": "",
+            "training_years": "",
+        })
+        slot["run_ids"].append(int(r["id"]))
+        if r.get("forecast_mode"):
+            slot["modes"].append(r["forecast_mode"])
+        # Pick the biggest item count among the year's runs as the headline
+        ti = int(r.get("total_items") or 0)
+        if ti > slot["total_items"]:
+            slot["total_items"] = ti
+            slot["hv_item_count"] = int(r.get("hv_item_count") or 0)
+            slot["training_years"] = r.get("training_years") or ""
+        # Latest timestamp
+        ts = str(r.get("run_timestamp") or "")
+        if ts > slot["latest_ts"]:
+            slot["latest_ts"] = ts
+        # Average MAPE: take backtest run's avg if present (Future runs have NULL)
+        if r.get("avg_mape") is not None:
+            slot["avg_mape"] = float(r["avg_mape"])
+
+    if predictions_by_year:
+        for y, preds in predictions_by_year.items():
+            if y not in by_year:
+                continue
+            periods = sorted({str(p.get("year_month")) for p in preds if p.get("year_month")})
+            by_year[y]["period_count"] = len(periods)
+            by_year[y]["periods"] = periods
+            by_year[y]["row_count"] = len(preds)
+
+    return sorted(by_year.values(), key=lambda x: x["year"], reverse=True)
+
+
+def _load_supabase_year(url: str, key: str, year: int, runs: list[dict] | None = None) -> tuple[list[dict], list[dict], dict | None]:
+    """Fetch every prediction row for a given year (across all runs) and
+    return (records, mape_summary, year_meta) for the dashboard to render."""
+    pred_rows = _fetch_supabase_predictions_by_year(url, key, year)
+    records = _supabase_to_records(pred_rows)
+    if runs is None:
+        runs = _fetch_supabase_runs(url, key)
+    year_summary = next((y for y in _years_summary(runs, {year: pred_rows}) if y["year"] == int(year)), None)
+    # Build a synthetic "run meta" object so the MAPE summary tier label is
+    # informative (carries the dominant mode + the actual year).
+    synth_run = None
+    if year_summary:
+        synth_run = {
+            "id": ",".join(map(str, year_summary["run_ids"])),
+            "forecast_mode": "/".join(sorted(set(year_summary["modes"]))) or None,
+            "predict_year": year,
+            "run_timestamp": year_summary["latest_ts"],
+        }
+    mape_summary = _synth_mape_summary(pred_rows, synth_run)
+    return records, mape_summary, year_summary
+
+
 def _load_supabase_run(url: str, key: str, run_id: int) -> tuple[list[dict], list[dict], dict | None]:
-    """Fetch a specific run + its predictions and return (records, mape_summary, run_meta)."""
+    """Single-run fetch (kept for back-compat / debugging; the year-based
+    view is the primary UX now)."""
     runs = _fetch_supabase_runs(url, key)
     run_meta = next((r for r in runs if int(r.get("id", -1)) == int(run_id)), None)
     pred_rows = _fetch_supabase_predictions(url, key, run_id)
     records = _supabase_to_records(pred_rows)
     mape_summary = _synth_mape_summary(pred_rows, run_meta)
     return records, mape_summary, run_meta
+
+
+def _supabase_year_source_label(year_meta: dict | None) -> str:
+    if not year_meta:
+        return "Supabase"
+    bits = [f"Forecast {year_meta['year']}"]
+    pc = year_meta.get("period_count")
+    if pc:
+        bits.append(f"{pc} mo")
+    modes = year_meta.get("modes") or []
+    if modes:
+        bits.append("/".join(sorted(set(modes))))
+    return "Supabase · " + " · ".join(bits)
 
 
 def _supabase_source_label(run_meta: dict | None) -> str:
@@ -871,6 +969,8 @@ def build_html(
     mape_summary: list[dict] | None = None,
     runs: list[dict] | None = None,
     current_run_id: int | None = None,
+    years: list[dict] | None = None,
+    current_year: int | None = None,
 ) -> str:
     src = _read_design_files(_design_version())
     html = src["main_html"]
@@ -882,6 +982,7 @@ def build_html(
     json_str = json.dumps(records, default=str).replace("</", "<\\/")
     mape_str = json.dumps(mape_summary or [], default=str).replace("</", "<\\/")
     runs_str = json.dumps(runs or [], default=str).replace("</", "<\\/")
+    years_str = json.dumps(years or [], default=str).replace("</", "<\\/")
 
     bridge_js = """
 window.__showErrorToast = function(msg) {
@@ -922,9 +1023,8 @@ window.__expandHostUploader = function() {
   } catch (e) {}
 };
 window.__switchRun = function(runId) {
-  // Submit a sentinel-named file via the host file_uploader so the Python
-  // side knows which Supabase run to load next. Payload (file content) is
-  // the integer run id as text; filename pattern is matched server-side.
+  // Older single-run switcher. Kept so any older client builds keep
+  // working — the new picker submits years, not run ids.
   try {
     var doc = window.parent.document;
     var input = doc.querySelector('[data-testid="stFileUploaderDropzoneInput"]')
@@ -942,6 +1042,28 @@ window.__switchRun = function(runId) {
     return true;
   } catch (e) { console.error('run switch failed', e); return false; }
 };
+window.__switchYear = function(year) {
+  // Year-level switcher. Submits a sentinel-named file whose body holds
+  // the integer year. Python-side handler unions every Supabase run that
+  // touches that year into a single continuous view (Backtest + Future
+  // months distinguished via the per-row forecast_mode column).
+  try {
+    var doc = window.parent.document;
+    var input = doc.querySelector('[data-testid="stFileUploaderDropzoneInput"]')
+      || doc.querySelector('[data-testid="stFileUploader"] input[type=\\"file\\"]')
+      || doc.querySelector('input[type=\\"file\\"]');
+    if (!input) return false;
+    var ys = String(year);
+    var blob = new Blob([ys], { type: 'text/csv' });
+    var file = new File([blob], '__YEAR_SWITCH__' + ys + '.csv', { type: 'text/csv' });
+    var dt = new DataTransfer();
+    dt.items.add(file);
+    var setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files').set;
+    setter.call(input, dt.files);
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  } catch (e) { console.error('year switch failed', e); return false; }
+};
 """
     # SUPABASE_URL / SUPABASE_KEY are exposed to the iframe so the React
     # side can use supabase-js directly for run switching (no Streamlit
@@ -953,6 +1075,8 @@ window.__switchRun = function(runId) {
         f"window.__MAPE_SUMMARY = {mape_str}; "
         f"window.__RUNS_LIST = {runs_str}; "
         f"window.__CURRENT_RUN_ID = {json.dumps(current_run_id)}; "
+        f"window.__YEARS_LIST = {years_str}; "
+        f"window.__CURRENT_YEAR = {json.dumps(current_year)}; "
         f"window.__SOURCE_LABEL = {json.dumps(source_label)}; "
         f"window.__LAST_ERROR = {json.dumps(last_error)}; "
         f"window.__SUPABASE_URL = {json.dumps(sb_url)}; "
@@ -986,25 +1110,33 @@ window.__switchRun = function(runId) {
 # Session state defaults — prefer Supabase, fall back to bundled Excel.
 # ---------------------------------------------------------------------------
 def _bootstrap_session_state() -> None:
-    """Populate records / mape_summary / source_label / runs on first load.
-    Tries Supabase first; on any failure (no creds, network, etc.) falls
-    back to the bundled Excel and leaves a non-fatal note in last_error
-    so the user can see why."""
+    """Populate records / mape_summary / source_label / years on first load.
+    Loads the latest predict_year from Supabase by default (merging Backtest
+    + Future runs for that year). On any failure falls back to the bundled
+    Excel and leaves a non-fatal note in last_error."""
     url, key = _supabase_creds()
     if url and key:
         try:
             runs = _fetch_supabase_runs(url, key)
             if runs:
-                latest = runs[0]
-                run_id = int(latest["id"])
-                records, mape_summary, run_meta = _load_supabase_run(url, key, run_id)
-                st.session_state.records = records
-                st.session_state.mape_summary = mape_summary
-                st.session_state.source_label = _supabase_source_label(run_meta)
-                st.session_state.runs_list = runs
-                st.session_state.current_run_id = run_id
-                st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-                return
+                # Latest predict_year = newest year covered by any run.
+                years_meta = _years_summary(runs)
+                if years_meta:
+                    latest_year = years_meta[0]["year"]
+                    records, mape_summary, year_meta = _load_supabase_year(url, key, latest_year, runs)
+                    st.session_state.records = records
+                    st.session_state.mape_summary = mape_summary
+                    st.session_state.source_label = _supabase_year_source_label(year_meta)
+                    # Years list with period counts baked in (cheap second pass
+                    # so the sidebar picker can show "12 months" / "6 months").
+                    pred_cache = {latest_year: _fetch_supabase_predictions_by_year(url, key, latest_year)}
+                    st.session_state.years_list = _years_summary(runs, pred_cache)
+                    st.session_state.current_year = latest_year
+                    # Keep runs_list around for any debugging / older client builds
+                    st.session_state.runs_list = runs
+                    st.session_state.current_run_id = None
+                    st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    return
             # creds present but no runs — fall through to Excel
             st.session_state.last_error = "Supabase returned 0 runs — using bundled data."
         except Exception as exc:
@@ -1099,22 +1231,23 @@ st.markdown(_DASHBOARD_CSS, unsafe_allow_html=True)
 
 if upload is not None:
     if upload.name == "__RESET_TO_BUNDLED__.csv":
-        # "Reset" now means "go back to the latest Supabase run" — the
-        # bundled Excel is no longer shipped in the repo. Fall back to
-        # the Excel only if a developer dropped one in locally.
+        # "Reset" now means "go back to the latest Supabase year".
         url, key = _supabase_creds()
         if url and key:
             try:
                 runs = _fetch_supabase_runs(url, key)
-                if runs:
-                    latest = runs[0]
-                    rid = int(latest["id"])
-                    records, mape_summary, run_meta = _load_supabase_run(url, key, rid)
+                years_meta = _years_summary(runs)
+                if years_meta:
+                    latest_year = years_meta[0]["year"]
+                    records, mape_summary, year_meta = _load_supabase_year(url, key, latest_year, runs)
+                    pred_cache = {latest_year: _fetch_supabase_predictions_by_year(url, key, latest_year)}
                     st.session_state.records = records
                     st.session_state.mape_summary = mape_summary
-                    st.session_state.source_label = _supabase_source_label(run_meta)
+                    st.session_state.source_label = _supabase_year_source_label(year_meta)
+                    st.session_state.years_list = _years_summary(runs, pred_cache)
+                    st.session_state.current_year = latest_year
                     st.session_state.runs_list = runs
-                    st.session_state.current_run_id = rid
+                    st.session_state.current_run_id = None
                     st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
                     st.session_state.last_error = None
                 else:
@@ -1126,14 +1259,45 @@ if upload is not None:
             st.session_state.records = all_data["monthly"]
             st.session_state.mape_summary = all_data["mape"]
             st.session_state.source_label = f"Bundled · {DEFAULT_DATA.name}"
+            st.session_state.years_list = []
+            st.session_state.current_year = None
             st.session_state.runs_list = []
             st.session_state.current_run_id = None
             st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
             st.session_state.last_error = None
         else:
             st.session_state.last_error = "Nothing to reset to — Supabase not configured and no bundled Excel."
+    elif upload.name.startswith("__YEAR_SWITCH__") and upload.name.endswith(".csv"):
+        # Switch to a different forecast year — fetches all rows where
+        # year_month falls in the requested year, merging Backtest +
+        # Future runs for that year into a single continuous view.
+        try:
+            new_year = int(upload.getvalue().decode("utf-8", errors="ignore").strip())
+        except ValueError:
+            new_year = None
+        url, key = _supabase_creds()
+        if new_year is None or not (url and key):
+            st.session_state.last_error = "Could not switch year — bad year value or missing Supabase credentials."
+        else:
+            try:
+                runs = _fetch_supabase_runs(url, key)
+                records, mape_summary, year_meta = _load_supabase_year(url, key, new_year, runs)
+                if not records:
+                    st.session_state.last_error = f"No predictions found for {new_year}."
+                else:
+                    pred_cache = {new_year: _fetch_supabase_predictions_by_year(url, key, new_year)}
+                    st.session_state.records = records
+                    st.session_state.mape_summary = mape_summary
+                    st.session_state.source_label = _supabase_year_source_label(year_meta)
+                    st.session_state.years_list = _years_summary(runs, pred_cache)
+                    st.session_state.current_year = new_year
+                    st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    st.session_state.last_error = None
+            except Exception as exc:
+                st.session_state.last_error = f"Failed to load year {new_year}: {exc}"
     elif upload.name.startswith("__RUN_SWITCH__") and upload.name.endswith(".csv"):
-        # Switch to a different Supabase forecast run. Run id is in the file body.
+        # Older single-run switch sentinel — keep working for back-compat
+        # but no UI surfaces it any more.
         try:
             new_run_id = int(upload.getvalue().decode("utf-8", errors="ignore").strip())
         except ValueError:
@@ -1177,5 +1341,7 @@ html_doc = build_html(
     mape_summary=st.session_state.get("mape_summary", []),
     runs=st.session_state.get("runs_list", []),
     current_run_id=st.session_state.get("current_run_id"),
+    years=st.session_state.get("years_list", []),
+    current_year=st.session_state.get("current_year"),
 )
 components_html(html_doc, height=1100, scrolling=True)

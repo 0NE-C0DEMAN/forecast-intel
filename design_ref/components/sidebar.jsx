@@ -1,40 +1,44 @@
 /* Sidebar component — light theme */
 
-function RunPicker({ collapsed, runs, currentRunId, onSwitchRun, switching }) {
-  // Forecast-run picker. Run switching is now pure React — onSwitchRun is
-  // wired to a Supabase fetch in the parent App component, so there's no
-  // Streamlit rerun and no iframe reload.
-  const safeRuns = runs || [];
-  const currentId = currentRunId;
+function YearPicker({ collapsed, years, currentYear, onSwitchYear, switching }) {
+  // Year-level forecast picker. Each entry represents one predict_year and
+  // unions every Supabase run that touches that year — Backtest months and
+  // Future months appear in one continuous view via the per-row
+  // forecast_mode column.
+  const safeYears = years || [];
   const [open, setOpen] = React.useState(false);
-  const [pendingId, setPendingId] = React.useState(null);
+  const [pendingYear, setPendingYear] = React.useState(null);
   const ref = React.useRef(null);
   React.useEffect(() => {
     function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
-  // When the parent finishes loading, clear local pending state + close dropdown.
   const wasSwitching = React.useRef(switching);
   React.useEffect(() => {
     if (wasSwitching.current && !switching) {
-      setPendingId(null);
+      setPendingYear(null);
       setOpen(false);
     }
     wasSwitching.current = switching;
   }, [switching]);
-  if (!safeRuns.length || collapsed) return null;
-  const current = safeRuns.find(r => Number(r.id) === Number(currentId)) || safeRuns[0];
-  const fmtTs = (ts) => (ts || '').slice(0, 10).replace('T', ' ');
-  const modeColor = (m) => m === 'Backtest' ? '#059669' : '#6366F1';
-  const handle = (id) => {
-    if (id === currentId || switching) return;
-    setPendingId(id);
-    if (onSwitchRun) onSwitchRun(id);
+  if (!safeYears.length || collapsed) return null;
+  const current = safeYears.find(y => Number(y.year) === Number(currentYear)) || safeYears[0];
+  const modeBadge = (modes) => {
+    const set = [...new Set(modes || [])].sort();
+    if (set.length === 0) return { label: '—', color: '#9CA3AF' };
+    if (set.length === 1) return { label: set[0], color: set[0] === 'Backtest' ? '#059669' : '#6366F1' };
+    return { label: set.join('+'), color: '#7C3AED' };
   };
+  const handle = (year) => {
+    if (Number(year) === Number(currentYear) || switching) return;
+    setPendingYear(year);
+    if (onSwitchYear) onSwitchYear(year);
+  };
+  const currentBadge = modeBadge(current.modes);
   return (
     <div ref={ref} style={{ padding: '0 10px 6px', position: 'relative' }}>
-      <div style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '2px 4px 6px' }}>Forecast Run</div>
+      <div style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '2px 4px 6px' }}>Forecast Year</div>
       <button
         onClick={() => setOpen(o => !o)}
         style={{
@@ -50,15 +54,16 @@ function RunPicker({ collapsed, runs, currentRunId, onSwitchRun, switching }) {
       >
         <span style={{
           fontSize: 9.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
-          background: modeColor(current.forecast_mode) + '14',
-          color: modeColor(current.forecast_mode), letterSpacing: '.02em',
-        }}>{current.forecast_mode || '—'}</span>
+          background: currentBadge.color + '14',
+          color: currentBadge.color, letterSpacing: '.02em',
+        }}>{currentBadge.label}</span>
         <div style={{ flex: 1, minWidth: 0, lineHeight: 1.2 }}>
-          <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text)' }}>
-            Run #{current.id} <span style={{ color: 'var(--text-3)', fontWeight: 500 }}>· {current.predict_year}</span>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+            {current.year}
           </div>
           <div style={{ fontSize: 10, color: 'var(--text-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {fmtTs(current.run_timestamp)}
+            {current.period_count != null ? `${current.period_count} mo` : `${current.run_ids?.length || 1} run${current.run_ids?.length > 1 ? 's' : ''}`}
+            {current.total_items ? ` · ${current.total_items} items` : ''}
           </div>
         </div>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-3)', transition: 'transform .15s', transform: open ? 'rotate(180deg)' : 'none', flexShrink: 0 }}>
@@ -72,12 +77,12 @@ function RunPicker({ collapsed, runs, currentRunId, onSwitchRun, switching }) {
           boxShadow: '0 12px 28px rgba(15,23,42,.10), 0 2px 4px rgba(15,23,42,.04)',
           zIndex: 50, overflow: 'hidden', maxHeight: 320, overflowY: 'auto',
         }}>
-          {safeRuns.map(r => {
-            const sel = Number(r.id) === Number(currentId);
-            const isSw = Number(pendingId) === Number(r.id) && switching;
-            const mc = modeColor(r.forecast_mode);
+          {safeYears.map(y => {
+            const sel = Number(y.year) === Number(currentYear);
+            const isSw = Number(pendingYear) === Number(y.year) && switching;
+            const badge = modeBadge(y.modes);
             return (
-              <button key={r.id} onClick={() => handle(r.id)} disabled={sel || switching}
+              <button key={y.year} onClick={() => handle(y.year)} disabled={sel || switching}
                 style={{
                   display: 'block', width: '100%', textAlign: 'left',
                   padding: '9px 11px', border: 'none',
@@ -94,18 +99,17 @@ function RunPicker({ collapsed, runs, currentRunId, onSwitchRun, switching }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                   <span style={{
                     fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3,
-                    background: mc + '14', color: mc, letterSpacing: '.02em',
-                  }}>{r.forecast_mode}</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
-                    Run #{r.id}
-                  </span>
+                    background: badge.color + '14', color: badge.color, letterSpacing: '.02em',
+                  }}>{badge.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{y.year}</span>
                   <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-3)' }}>
-                    {r.predict_year}
+                    {y.period_count != null ? `${y.period_count} mo` : `${y.run_ids?.length || 1} run${y.run_ids?.length > 1 ? 's' : ''}`}
                   </span>
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--text-3)', lineHeight: 1.35 }}>
-                  {fmtTs(r.run_timestamp)} · {r.total_items} items
-                  {r.avg_mape != null && <> · MAPE {r.avg_mape.toFixed(1)}%</>}
+                  {y.total_items ? `${y.total_items} items` : ''}
+                  {y.avg_mape != null && <> · MAPE {y.avg_mape.toFixed(1)}%</>}
+                  {y.training_years ? ` · trained ${y.training_years}` : ''}
                 </div>
                 {isSw && (
                   <div style={{ marginTop: 4, fontSize: 9.5, color: 'var(--accent)', fontWeight: 600 }}>
@@ -121,7 +125,7 @@ function RunPicker({ collapsed, runs, currentRunId, onSwitchRun, switching }) {
   );
 }
 
-function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDataSource, itemCount, runs, currentRunId, onSwitchRun, switching }) {
+function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDataSource, itemCount, years, currentYear, onSwitchYear, switching }) {
   const nav = [
     { id: 'lineitems', label: 'Line Items', icon: 'list' },
     { id: 'predictions', label: 'Predictions', icon: 'chart' },
@@ -202,7 +206,7 @@ function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDa
         </button>
       </div>
 
-      <RunPicker collapsed={collapsed} runs={runs} currentRunId={currentRunId} onSwitchRun={onSwitchRun} switching={switching} />
+      <YearPicker collapsed={collapsed} years={years} currentYear={currentYear} onSwitchYear={onSwitchYear} switching={switching} />
 
       <nav style={{ flex: 1, padding: '4px 8px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
         {!collapsed && <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '8px 12px 4px' }}>Dashboard</div>}
