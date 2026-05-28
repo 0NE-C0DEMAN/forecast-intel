@@ -383,7 +383,9 @@ function ItemForecastCard({ item }) {
     const cH   = opts.cH   || 200;
     const padL = opts.padL || 60;
     const padT = opts.padT || 52;
-    const padB = opts.padB || (multiYear ? (hasDir ? 60 : 48) : (hasDir ? 52 : 40));
+    // Year label is always shown under every month now, so the bottom
+    // padding always needs room for two label rows (month + year).
+    const padB = opts.padB || (hasDir ? 60 : 48);
     const fs   = opts.fs   || 12;
     const groupW = (hasActuals ? barW * 2 + barGap : barW) + groupGap;
     const chartW = padL + periods.length * groupW + 16;
@@ -504,13 +506,19 @@ function ItemForecastCard({ item }) {
 
                 {/* X axis — month label */}
                 <text x={groupCx} y={padT + cH + 14} textAnchor="middle" fontSize={fs} fontWeight="600" fill="var(--text-2)" fontFamily="var(--mono)">{fmtMon(p.period)}</text>
-                {/* X axis — year (on boundary) */}
-                {multiYear && <text x={groupCx} y={padT + cH + 26} textAnchor="middle" fontSize={fs - 1}
-                  fill={isNewYear ? 'var(--text-3)' : 'transparent'} fontFamily="var(--mono)">{isNewYear ? yr : ''}</text>}
+                {/* X axis — year shown under every month (lighter so the
+                   month name stays the primary label).  Year-boundary months
+                   are slightly bolder so the eye still picks up the
+                   25 -> 26 transition at a glance. */}
+                <text x={groupCx} y={padT + cH + 26} textAnchor="middle" fontSize={fs - 1}
+                  fill={isNewYear ? 'var(--text-2)' : 'var(--text-3)'}
+                  fontWeight={isNewYear ? 700 : 500}
+                  fontFamily="var(--mono)">{yr}</text>
 
-                {/* Direction indicator ✓ / ✗ */}
+                {/* Direction indicator ✓ / ✗ — always below the (now always
+                    shown) year row */}
                 {p.directionCorrect != null && (
-                  <text x={groupCx} y={padT + cH + (multiYear ? 40 : 30)} textAnchor="middle"
+                  <text x={groupCx} y={padT + cH + 40} textAnchor="middle"
                     fontSize={fs} fontWeight="700"
                     fill={p.directionCorrect ? MAPE_GREEN : MAPE_RED}
                     fontFamily="var(--font)">{p.directionCorrect ? '✓' : '✗'}</text>
@@ -610,7 +618,7 @@ function ItemForecastCard({ item }) {
             </div>
             <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 4, lineHeight: 1.3 }}>{item.desc}</div>
             {avgMapeLabel && <div style={{ fontSize: 12, fontWeight: 600, color: avgMapeCol, marginBottom: 14 }}>{avgMapeLabel}</div>}
-            {renderChart({ barW: 44, groupGap: 28, cH: 320, padL: 72, padT: 32, padB: multiYear ? 64 : 54, fs: 12 })}
+            {renderChart({ barW: 44, groupGap: 28, cH: 320, padL: 72, padT: 32, padB: 64, fs: 12 })}
             <Legend fs={11} />
           </div>
         </div>,
