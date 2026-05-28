@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forecast Intel — Monthly Predictions</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;450;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #FFFFFF;
+    --sidebar-bg: #FAFBFC;
+    --surface-2: #F3F4F7;
+    --border: #E5E7EB;
+    --hover: #F5F6F8;
+    --text: #111827;
+    --text-2: #4B5563;
+    --text-3: #9CA3AF;
+    --accent: #4F46E5;
+    --accent-surface: rgba(79,70,229,0.06);
+    --accent-border: rgba(79,70,229,0.2);
+    --deliver: #059669;
+    --deliver-bg: rgba(5,150,105,0.08);
+    --return: #DC2626;
+    --return-bg: rgba(220,38,38,0.07);
+    --nochange: #D97706;
+    --nochange-bg: rgba(217,119,6,0.08);
+    --font: 'Outfit', -apple-system, sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+  html, body { height: 100%; background: var(--sidebar-bg); color: var(--text); font-family: var(--font); }
+  body { display: flex; overflow: hidden; }
+  #root { display: flex; height: 100%; width: 100%; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::selection { background: var(--accent-surface); color: var(--accent); }
+
+  /* Dedicated "scroller" for charts/timelines that may overflow horizontally
+     when a run has many periods. Wider, themed scrollbar so it's clearly
+     discoverable; subtle fade on the right edge as an affordance. */
+  .h-scroller { overflow-x: auto; overflow-y: visible; position: relative; }
+  .h-scroller::-webkit-scrollbar { height: 9px; width: 9px; }
+  .h-scroller::-webkit-scrollbar-track { background: #F3F4F7; border-radius: 6px; margin: 2px; }
+  .h-scroller::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 6px; border: 2px solid #F3F4F7; }
+  .h-scroller::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+  /* === Mobile-only overrides — desktop layout untouched above 900px === */
+  @media (max-width: 900px) {
+    /* KPI strip: 2 columns on tablets/phones */
+    [style*="grid-template-columns: repeat(4, 1fr)"] {
+      grid-template-columns: repeat(2, 1fr) !important;
+      gap: 8px !important;
+    }
+    /* Main 6-col card grid: single column */
+    [style*="grid-template-columns: repeat(6, 1fr)"] {
+      grid-template-columns: 1fr !important;
+    }
+    /* Card spans collapse to full width */
+    [style*="grid-column: span 2"],
+    [style*="grid-column: span 3"],
+    [style*="grid-column: span 6"] {
+      grid-column: 1 / -1 !important;
+    }
+    /* Internal 2-col chart grids (Period-Pair Comparison etc.) stack */
+    [style*="grid-template-columns: 1fr 1fr"]:not([style*="repeat"]) {
+      grid-template-columns: 1fr !important;
+    }
+    /* Header row: allow wrap so title + period selector + badge can stack */
+    header[style*="display: flex"] { flex-wrap: wrap; row-gap: 8px; }
+    /* Tab strip horizontal scroll */
+    [style*="border-bottom: 1px solid var(--border)"] > div[style*="display: flex"][style*="gap: 4"] {
+      overflow-x: auto;
+      flex-wrap: nowrap;
+      -webkit-overflow-scrolling: touch;
+    }
+    /* Page title + period selector area: tighter padding */
+    main [style*="padding: 14px 24px 0"], main [style*="padding: 14px 24px"] {
+      padding: 10px 14px 0 !important;
+    }
+    /* Tab content padding */
+    main > div > div[style*="padding: 16"] { padding: 12px !important; }
+    /* Item Explorer side panel stacks below table on mobile */
+    [style*="width: 380px"][style*="flex-shrink: 0"] {
+      width: 100% !important;
+      max-height: 60vh;
+    }
+    [style*="display: flex"][style*="gap: 12px"][style*="overflow: hidden"]:has(> [style*="width: 380px"]) {
+      flex-direction: column !important;
+    }
+    /* Maximize-card modal fills more of the screen */
+    [role="dialog"] > div { width: calc(100vw - 16px) !important; max-height: calc(100vh - 16px) !important; }
+    /* Tables: allow horizontal scroll if columns get too narrow */
+    table { min-width: 640px; }
+  }
+
+  @media (max-width: 540px) {
+    /* Phone: KPI strip stacks fully */
+    [style*="grid-template-columns: repeat(4, 1fr)"] {
+      grid-template-columns: 1fr !important;
+    }
+    /* DataSource modal becomes full-screen */
+    [role="dialog"] > div, [style*="width: 520px"][style*="maxHeight: 80vh"] {
+      width: 100vw !important; max-width: 100vw !important;
+      max-height: 100vh !important; border-radius: 0 !important;
+    }
+    /* Hide the Predictions text in sidebar header on tiny screens (icon stays) */
+  }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<!-- Supabase JS client — used directly from React so run switching is
+     instantaneous without a Streamlit rerun. The anon key is provided
+     by the host (see app.py) via window.__SUPABASE_URL / __SUPABASE_KEY. -->
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<!-- JSX is split into focused files so the HTML shell stays small.
+     Load order matters because Babel-standalone compiles each script
+     in isolation (no module boundary): data.jsx exposes helpers on
+     `window` for everyone else; components/* define their own widgets;
+     app.jsx wires it all together and renders <App />. -->
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="components/sidebar.jsx"></script>
+<script type="text/babel" src="components/charts.jsx"></script>
+<script type="text/babel" src="components/datasource.jsx"></script>
+<script type="text/babel" src="components/explorer.jsx"></script>
+<script type="text/babel" src="components/upload.jsx"></script>
+<script type="text/babel" src="components/insights.jsx"></script>
+<script type="text/babel" src="app.jsx"></script>
+</head>
+<body>
+<script>
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accentColor": "#4F46E5"
+}/*EDITMODE-END*/;
+</script>
+<script>
+window.__RAW_DATA = null;
+fetch('data.json').then(r=>r.json()).then(d=>{ window.__RAW_DATA = d; window.dispatchEvent(new Event('dataready')); });
+</script>
+<div id="root"></div>
+
+<script type="text/babel">
+// All components live in separate .jsx files (see <head>). This bottom
+// script just mounts the root once everything is loaded and compiled.
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

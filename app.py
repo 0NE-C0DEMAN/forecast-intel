@@ -10,7 +10,7 @@ import streamlit as st
 from streamlit.components.v1 import html as components_html
 
 ROOT = Path(__file__).parent
-DESIGN = ROOT / "design_ref"
+FRONTEND = ROOT / "frontend"
 DEFAULT_DATA = ROOT / "Forecast_26_Jan_Feb_Results_v4.xlsx"
 MONTHLY_SHEET = "Monthly_Predictions"
 MAPE_SHEET = "MAPE_Summary"
@@ -943,22 +943,31 @@ def _supabase_source_label(run_meta: dict | None) -> str:
     return "Supabase · " + " · ".join(bits)
 
 
+# Component JSX files (top-level helpers + per-screen widgets) that get
+# inlined into the served HTML.  Order matters: `data` exposes the
+# Supabase hook + mappers used by everything else; `app` is the entry
+# component and must be last.
+_COMPONENT_FILES = [
+    "sidebar", "charts", "explorer", "insights", "upload", "datasource",
+]
+_TOP_LEVEL_JSX = ["tweaks-panel", "data", "app"]
+
+
 @st.cache_data(show_spinner=False)
 def _read_design_files(version: float) -> dict[str, str]:
     files: dict[str, str] = {}
-    for name in ["sidebar", "charts", "explorer", "insights", "upload", "datasource"]:
-        files[name] = (DESIGN / "components" / f"{name}.jsx").read_text(encoding="utf-8")
-    files["tweaks"] = (DESIGN / "tweaks-panel.jsx").read_text(encoding="utf-8")
-    files["main_html"] = (DESIGN / "Monthly Predictions v3.html").read_text(encoding="utf-8")
+    for name in _COMPONENT_FILES:
+        files[name] = (FRONTEND / "components" / f"{name}.jsx").read_text(encoding="utf-8")
+    for name in _TOP_LEVEL_JSX:
+        files[name] = (FRONTEND / f"{name}.jsx").read_text(encoding="utf-8")
+    files["main_html"] = (FRONTEND / "index.html").read_text(encoding="utf-8")
     return files
 
 
 def _design_version() -> float:
-    paths = [
-        DESIGN / "Monthly Predictions v3.html",
-        DESIGN / "tweaks-panel.jsx",
-    ]
-    paths += [DESIGN / "components" / f"{n}.jsx" for n in ["sidebar", "charts", "explorer", "insights", "upload", "datasource"]]
+    paths = [FRONTEND / "index.html"]
+    paths += [FRONTEND / f"{n}.jsx" for n in _TOP_LEVEL_JSX]
+    paths += [FRONTEND / "components" / f"{n}.jsx" for n in _COMPONENT_FILES]
     return max(p.stat().st_mtime for p in paths)
 
 
@@ -1086,14 +1095,21 @@ window.__switchYear = function(year) {
     )
     html = html.replace(fetch_old, fetch_new)
 
+    # Inline every <script type="text/babel" src="..."></script> so the
+    # served HTML is fully self-contained (no separate JSX network round
+    # trips). The key on the right matches the dictionary built by
+    # _read_design_files; the path on the left matches the src attribute
+    # in index.html.
     refs = [
-        ("tweaks-panel.jsx", "tweaks"),
+        ("tweaks-panel.jsx", "tweaks-panel"),
+        ("data.jsx", "data"),
         ("components/sidebar.jsx", "sidebar"),
         ("components/charts.jsx", "charts"),
         ("components/datasource.jsx", "datasource"),
         ("components/explorer.jsx", "explorer"),
         ("components/upload.jsx", "upload"),
         ("components/insights.jsx", "insights"),
+        ("app.jsx", "app"),
     ]
     for src_path, key in refs:
         old = f'<script type="text/babel" src="{src_path}"></script>'
