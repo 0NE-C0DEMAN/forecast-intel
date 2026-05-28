@@ -773,17 +773,26 @@ def _supabase_to_records(pred_rows: list[dict]) -> list[dict]:
 def _synth_mape_summary(pred_rows: list[dict], run: dict | None) -> list[dict]:
     """Build the per-period MAPE summary the Model Accuracy page expects.
     Supabase doesn't have a MAPE_Summary table — we compute it from the
-    predictions: one row per period with MAPE All / MAPE HV / item counts."""
+    predictions: one row per period with MAPE All / MAPE HV / item counts.
+
+    Per-row APE column is `ape` in the 2026-05-28 schema (was `mape` in
+    the older schema; we accept either to stay defensive)."""
     if not pred_rows:
         return []
     df = pd.DataFrame(pred_rows)
     if "year_month" not in df.columns:
         return []
+    # Locate the per-row error column. New schema = `ape`; old = `mape`.
+    err_col = "ape" if "ape" in df.columns else ("mape" if "mape" in df.columns else None)
     tier_label = (run or {}).get("forecast_mode") or "Monthly"
     out: list[dict] = []
     for period, sub in df.groupby("year_month"):
-        all_mape = sub["mape"].dropna()
-        hv_mape = sub.loc[sub["is_high_value"] == 1, "mape"].dropna() if "is_high_value" in sub.columns else pd.Series(dtype=float)
+        if err_col is not None:
+            all_mape = sub[err_col].dropna()
+            hv_mape = sub.loc[sub["is_high_value"] == 1, err_col].dropna() if "is_high_value" in sub.columns else pd.Series(dtype=float)
+        else:
+            all_mape = pd.Series(dtype=float)
+            hv_mape = pd.Series(dtype=float)
         deliver = int((sub.get("pred_action") == "Deliver").sum()) if "pred_action" in sub.columns else 0
         ret = int((sub.get("pred_action") == "Return").sum()) if "pred_action" in sub.columns else 0
         out.append({
@@ -1185,7 +1194,25 @@ def _bootstrap_session_state() -> None:
     st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
-if "records" not in st.session_state:
+# Bootstrap on first run, and retry if Supabase is configured but the
+# previous attempt ended up empty (transient failure, or a code-edit
+# happened mid-bootstrap during local dev). Don't retry once the user
+# has uploaded an Excel — that's their explicit override.
+def _should_retry_bootstrap() -> bool:
+    if "records" not in st.session_state:
+        return True
+    if st.session_state.records:
+        return False
+    if (st.session_state.get("source_label") or "").startswith("Uploaded"):
+        return False
+    return all(_supabase_creds())
+
+
+if _should_retry_bootstrap():
+    # Wipe any stale empty state so the retry uses fresh data.
+    for k in ("records", "mape_summary", "source_label", "years_list",
+              "current_year", "runs_list", "current_run_id"):
+        st.session_state.pop(k, None)
     _bootstrap_session_state()
 
 if "last_error" not in st.session_state:
