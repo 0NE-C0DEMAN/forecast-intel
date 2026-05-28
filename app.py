@@ -810,6 +810,72 @@ def _synth_mape_summary(pred_rows: list[dict], run: dict | None) -> list[dict]:
 
 
 @st.cache_data(show_spinner=False, ttl=300)
+def _fetch_all_supabase_predictions(url: str, key: str) -> list[dict]:
+    """Paginated fetch of every prediction row across every run. The
+    dashboard now renders a single continuous view (no per-year split);
+    Backtest and Future rows are distinguished by the per-row
+    `forecast_mode` column rather than by which year/run they belong to."""
+    client = _supabase_client(url, key)
+    all_rows: list[dict] = []
+    offset = 0
+    PAGE = 1000
+    while True:
+        resp = (
+            client.table("forecast_predictions")
+            .select("*")
+            .order("year_month")
+            .range(offset, offset + PAGE - 1)
+            .execute()
+        )
+        page = list(resp.data or [])
+        if not page:
+            break
+        all_rows.extend(page)
+        if len(page) < PAGE:
+            break
+        offset += PAGE
+    return all_rows
+
+
+def _load_supabase_all(url: str, key: str, runs: list[dict] | None = None) -> tuple[list[dict], list[dict], dict | None]:
+    """Fetch every prediction row across every run and return
+    (records, mape_summary, meta). The meta object is a synthetic
+    "run" used only for the source label + MAPE-summary tier text."""
+    pred_rows = _fetch_all_supabase_predictions(url, key)
+    records = _supabase_to_records(pred_rows)
+    if runs is None:
+        runs = _fetch_supabase_runs(url, key)
+    periods = sorted({str(p.get("year_month")) for p in pred_rows if p.get("year_month")})
+    modes = sorted({str(p.get("forecast_mode")) for p in pred_rows if p.get("forecast_mode")})
+    synth_meta = {
+        "id": "all",
+        "forecast_mode": "/".join(modes) if modes else None,
+        "predict_year": None,
+        "run_timestamp": "",
+        "period_count": len(periods),
+        "row_count": len(pred_rows),
+        "periods": periods,
+        "modes": modes,
+        "runs": runs or [],
+    }
+    mape_summary = _synth_mape_summary(pred_rows, synth_meta)
+    return records, mape_summary, synth_meta
+
+
+def _supabase_all_source_label(meta: dict | None) -> str:
+    if not meta:
+        return "Supabase"
+    bits = ["All forecasts"]
+    pc = meta.get("period_count")
+    if pc:
+        bits.append(f"{pc} mo")
+    modes = meta.get("modes") or []
+    if modes:
+        bits.append("/".join(sorted(set(modes))))
+    return "Supabase · " + " · ".join(bits)
+
+
+@st.cache_data(show_spinner=False, ttl=300)
 def _fetch_supabase_predictions_by_year(url: str, key: str, year: int) -> list[dict]:
     """Paginated fetch of every prediction row whose `year_month` falls in
     the given year. Backtest and Future runs both contribute — the per-row
@@ -1144,25 +1210,21 @@ def _bootstrap_session_state() -> None:
         try:
             runs = _fetch_supabase_runs(url, key)
             if runs:
-                # Latest predict_year = newest year covered by any run.
-                years_meta = _years_summary(runs)
-                if years_meta:
-                    latest_year = years_meta[0]["year"]
-                    records, mape_summary, year_meta = _load_supabase_year(url, key, latest_year, runs)
+                records, mape_summary, meta = _load_supabase_all(url, key, runs)
+                if records:
                     st.session_state.records = records
                     st.session_state.mape_summary = mape_summary
-                    st.session_state.source_label = _supabase_year_source_label(year_meta)
-                    # Years list with period counts baked in (cheap second pass
-                    # so the sidebar picker can show "12 months" / "6 months").
-                    pred_cache = {latest_year: _fetch_supabase_predictions_by_year(url, key, latest_year)}
-                    st.session_state.years_list = _years_summary(runs, pred_cache)
-                    st.session_state.current_year = latest_year
-                    # Keep runs_list around for any debugging / older client builds
+                    st.session_state.source_label = _supabase_all_source_label(meta)
+                    # Years/runs lists are no longer surfaced in the UI — the
+                    # year picker is gone — but we keep an empty placeholder so
+                    # downstream code doesn't trip on a missing key.
+                    st.session_state.years_list = []
+                    st.session_state.current_year = None
                     st.session_state.runs_list = runs
                     st.session_state.current_run_id = None
                     st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
                     return
-            # creds present but no runs — fall through to Excel
+            # creds present but no runs / no predictions — fall through to Excel
             st.session_state.last_error = "Supabase returned 0 runs — using bundled data."
         except Exception as exc:
             # Don't block the app: degrade to the bundled Excel and surface the
@@ -1274,21 +1336,18 @@ st.markdown(_DASHBOARD_CSS, unsafe_allow_html=True)
 
 if upload is not None:
     if upload.name == "__RESET_TO_BUNDLED__.csv":
-        # "Reset" now means "go back to the latest Supabase year".
+        # "Reset" now means "reload everything from Supabase".
         url, key = _supabase_creds()
         if url and key:
             try:
                 runs = _fetch_supabase_runs(url, key)
-                years_meta = _years_summary(runs)
-                if years_meta:
-                    latest_year = years_meta[0]["year"]
-                    records, mape_summary, year_meta = _load_supabase_year(url, key, latest_year, runs)
-                    pred_cache = {latest_year: _fetch_supabase_predictions_by_year(url, key, latest_year)}
+                if runs:
+                    records, mape_summary, meta = _load_supabase_all(url, key, runs)
                     st.session_state.records = records
                     st.session_state.mape_summary = mape_summary
-                    st.session_state.source_label = _supabase_year_source_label(year_meta)
-                    st.session_state.years_list = _years_summary(runs, pred_cache)
-                    st.session_state.current_year = latest_year
+                    st.session_state.source_label = _supabase_all_source_label(meta)
+                    st.session_state.years_list = []
+                    st.session_state.current_year = None
                     st.session_state.runs_list = runs
                     st.session_state.current_run_id = None
                     st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")

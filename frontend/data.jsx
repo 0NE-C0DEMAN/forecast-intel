@@ -175,15 +175,16 @@ function summariseYears(runs, predictionsByYear) {
 function useSupabaseData() {
   // Initial state hydrated from server-rendered values for fast first paint.
   // If the server didn't provide data (cold deploy, no secrets), fall back
-  // to whatever we cached in localStorage from the previous visit.
-  const cachedYearsBlob = React.useRef(readCache('years')).current;
-  const cachedYearBlob  = React.useRef(readCache('currentYear')).current;
-  const initYears       = (window.__YEARS_LIST && window.__YEARS_LIST.length) ? window.__YEARS_LIST : (cachedYearsBlob?.value || []);
-  const initYear        = window.__CURRENT_YEAR ?? (cachedYearBlob?.value ?? (initYears[0]?.year ?? null));
-  const cachedYearPredBlob = initYear != null ? readCache(`year|${initYear}`) : null;
-  const initRecords     = (window.__RAW_DATA && window.__RAW_DATA.length) ? window.__RAW_DATA : (cachedYearPredBlob?.value?.records || []);
-  const initMape        = (window.__MAPE_SUMMARY && window.__MAPE_SUMMARY.length) ? window.__MAPE_SUMMARY : (cachedYearPredBlob?.value?.mapeSummary || []);
-  const initLabel       = window.__SOURCE_LABEL || cachedYearPredBlob?.value?.sourceLabel || '';
+  // to whatever we cached in localStorage from the previous visit.  The
+  // "all" cache key holds the merged dataset (year picker is gone).
+  const cachedAllBlob = React.useRef(readCache('all')).current;
+  const initRecords   = (window.__RAW_DATA && window.__RAW_DATA.length) ? window.__RAW_DATA : (cachedAllBlob?.value?.records || []);
+  const initMape      = (window.__MAPE_SUMMARY && window.__MAPE_SUMMARY.length) ? window.__MAPE_SUMMARY : (cachedAllBlob?.value?.mapeSummary || []);
+  const initLabel     = window.__SOURCE_LABEL || cachedAllBlob?.value?.sourceLabel || '';
+  // Years list left as an empty array — the picker is hidden — but kept
+  // in the hook's return shape so old call sites don't trip.
+  const initYears = [];
+  const initYear  = null;
 
   const [years, setYears] = useState(initYears);
   const [currentYear, setCurrentYear] = useState(initYear);
@@ -206,6 +207,8 @@ function useSupabaseData() {
   // Paginated fetch for one year's predictions — gathers every row from
   // every run that touches the year. Backtest + Future runs union into a
   // single continuous view via the per-row forecast_mode column.
+  // (Still used by switchYear() for back-compat, but the picker that
+  // surfaced it is hidden now — the dashboard merges all years.)
   const fetchPredictionsForYear = React.useCallback(async (year) => {
     const all = [];
     let offset = 0;
@@ -218,6 +221,28 @@ function useSupabaseData() {
         .select('*')
         .gte('year_month', lo)
         .lte('year_month', hi)
+        .order('year_month')
+        .range(offset, offset + PAGE - 1);
+      if (err) throw err;
+      if (!data || !data.length) break;
+      all.push(...data);
+      if (data.length < PAGE) break;
+      offset += PAGE;
+    }
+    return all;
+  }, [client]);
+
+  // Paginated fetch for EVERY prediction across every run. The dashboard
+  // renders all years as one continuous view; per-row forecast_mode
+  // distinguishes Backtest from Future.
+  const fetchAllPredictions = React.useCallback(async () => {
+    const all = [];
+    let offset = 0;
+    const PAGE = 1000;
+    while (true) {
+      const { data, error: err } = await client
+        .from('forecast_predictions')
+        .select('*')
         .order('year_month')
         .range(offset, offset + PAGE - 1);
       if (err) throw err;
@@ -277,9 +302,9 @@ function useSupabaseData() {
     if (run?.predict_year != null) switchYear(Number(run.predict_year));
   }, [switchYear]);
 
-  // Background refresh on mount: re-fetch the runs list and the current
-  // year's predictions so the dashboard stays accurate after a stale
-  // hydrate. Runs once per session.
+  // Background refresh on mount: re-fetch every prediction row across
+  // every run so the dashboard stays accurate after a stale hydrate.
+  // Runs once per session.  (Year picker is hidden; we always show all.)
   React.useEffect(() => {
     if (!client) return;
     let cancelled = false;
@@ -288,28 +313,24 @@ function useSupabaseData() {
         const { data: freshRuns, error: rErr } = await client
           .from('forecast_runs').select('*').order('run_timestamp', { ascending: false });
         if (rErr) throw rErr;
-        if (cancelled || !freshRuns) return;
-        const targetYear = currentYear != null ? Number(currentYear) : Number(summariseYears(freshRuns)[0]?.year);
-        if (targetYear == null) return;
-        const rawRows = await fetchPredictionsForYear(targetYear);
+        if (cancelled) return;
+        const rawRows = await fetchAllPredictions();
         if (cancelled) return;
         const periods = [...new Set(rawRows.map(r => r.year_month))].sort();
-        const ys = summariseYears(freshRuns, { [targetYear]: rawRows });
-        setYears(ys);
-        writeCache('years', ys);
-        const yearMeta = ys.find(y => Number(y.year) === targetYear) || { year: targetYear };
-        const synthMeta = { ...yearMeta, forecast_mode: (yearMeta.modes || []).sort().join('/') || null };
+        const modes = [...new Set(rawRows.map(r => r.forecast_mode).filter(Boolean))].sort();
+        const synthMeta = { forecast_mode: modes.join('/') || null };
         const recs = supabaseRowsToRecords(rawRows);
         const mape = synthMapeSummary(rawRows, synthMeta);
-        const label = formatYearLabel({ ...yearMeta, period_count: periods.length });
+        const bits = ['All forecasts'];
+        if (periods.length) bits.push(`${periods.length} mo`);
+        if (modes.length) bits.push(modes.join('/'));
+        const label = 'Supabase · ' + bits.join(' · ');
         setRecords(recs);
         setMapeSummary(mape);
         setSourceLabel(label);
-        if (currentYear == null) {
-          setCurrentYear(targetYear);
-          writeCache('currentYear', targetYear);
-        }
-        writeCache(`year|${targetYear}`, { records: recs, mapeSummary: mape, sourceLabel: label });
+        setYears([]);
+        setCurrentYear(null);
+        writeCache('all', { records: recs, mapeSummary: mape, sourceLabel: label });
       } catch (err) {
         console.warn('background refresh failed', err);
       }
@@ -325,17 +346,13 @@ function useSupabaseData() {
     const handler = () => {
       const recs = window.__RAW_DATA || [];
       const mape = window.__MAPE_SUMMARY || [];
-      const yl   = window.__YEARS_LIST || [];
-      const yr   = window.__CURRENT_YEAR ?? null;
       const lbl  = window.__SOURCE_LABEL || '';
       setRecords(recs);
       setMapeSummary(mape);
-      setYears(yl);
-      setCurrentYear(yr);
+      setYears([]);
+      setCurrentYear(null);
       setSourceLabel(lbl);
-      if (yl.length) writeCache('years', yl);
-      if (yr != null) writeCache('currentYear', yr);
-      if (yr != null && recs.length) writeCache(`year|${yr}`, { records: recs, mapeSummary: mape, sourceLabel: lbl });
+      if (recs.length) writeCache('all', { records: recs, mapeSummary: mape, sourceLabel: lbl });
     };
     window.addEventListener('dataready', handler);
     return () => window.removeEventListener('dataready', handler);
