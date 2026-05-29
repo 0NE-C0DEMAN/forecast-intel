@@ -361,6 +361,114 @@ function useSupabaseData() {
   return { records, mapeSummary, years, currentYear, switchYear, switchRun, loading, error, sourceLabel };
 }
 
+/* ============================================================
+   SearchBox — reusable typeahead used by Line Items, Item Explorer
+   and Item Forecasts. Behaviour the user asked for:
+     • Type a partial word → a dropdown of matching items appears.
+     • Mouse-click a row, or ↑/↓ + Enter → filter to THAT one item
+       (exact match on item code, so prefix-sharing codes like
+       ABJ / ABJ-G / ABJ-BLCK don't bleed into each other).
+     • Type freely + Enter (no row highlighted) → keep the keyword,
+       close the dropdown, show ALL substring matches.
+     • Clearing the box (×) resets both the text and the exact pick.
+
+   Contract:
+     value      current text (string)
+     onType     (text) => void          — typing; caller should clear its exact pick
+     onPick     (option) => void         — a specific suggestion was chosen
+     onClear    () => void               — the × button / empty box
+     options    [{ label, sub, code, isHV }]  candidate items to suggest
+     placeholder, width (flex basis string), maxItems (default 8)
+   ============================================================ */
+function SearchBox({ value, onType, onPick, onClear, options, placeholder, width, maxItems }) {
+  const [open, setOpen] = React.useState(false);
+  const [active, setActive] = React.useState(-1);
+  const ref = React.useRef(null);
+  const cap = maxItems || 8;
+
+  const suggestions = React.useMemo(() => {
+    if (!value || !value.trim()) return [];
+    const s = value.trim().toLowerCase();
+    const seen = new Set();
+    const out = [];
+    for (const o of (options || [])) {
+      if (out.length >= cap) break;
+      const hay = ((o.label || '') + ' ' + (o.sub || '')).toLowerCase();
+      if (!hay.includes(s)) continue;
+      const k = (o.code != null ? String(o.code) : (o.label || '') + '|' + (o.sub || ''));
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(o);
+    }
+    return out;
+  }, [options, value, cap]);
+
+  React.useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  const pick = (opt) => {
+    if (onPick) onPick(opt);
+    else if (onType) onType(opt.label);
+    setOpen(false);
+    setActive(-1);
+  };
+
+  const keyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      if (!open || !suggestions.length) return;
+      e.preventDefault(); setActive(i => Math.min(i + 1, suggestions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      if (!open || !suggestions.length) return;
+      e.preventDefault(); setActive(i => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (open && active >= 0 && suggestions[active]) pick(suggestions[active]);
+      else { setOpen(false); setActive(-1); e.target.blur(); }
+    } else if (e.key === 'Escape') {
+      setOpen(false); setActive(-1);
+    }
+  };
+
+  return (
+    <div ref={ref} style={{ position: 'relative', flex: width || '0 0 300px' }}>
+      <input
+        value={value}
+        onChange={e => { if (onType) onType(e.target.value); setOpen(true); setActive(-1); }}
+        onFocus={e => { e.target.style.borderColor = 'var(--accent)'; setOpen(true); }}
+        onBlur={e => e.target.style.borderColor = 'var(--border)'}
+        onKeyDown={keyDown}
+        placeholder={placeholder || 'Search…'}
+        autoComplete="off"
+        style={{ width: '100%', padding: '7px 30px 7px 32px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, fontFamily: 'var(--font)', color: 'var(--text)', outline: 'none', background: '#fff', boxSizing: 'border-box' }}
+      />
+      <svg style={{ position: 'absolute', left: 11, top: 9, pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      {value && (
+        <button onMouseDown={e => { e.preventDefault(); if (onClear) onClear(); else if (onType) onType(''); setOpen(false); setActive(-1); }}
+          style={{ position: 'absolute', right: 8, top: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 15, lineHeight: 1, padding: '2px 3px' }}>×</button>
+      )}
+      {open && suggestions.length > 0 && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.10)', zIndex: 60, overflow: 'hidden', maxHeight: 320, overflowY: 'auto' }}>
+          {suggestions.map((s, i) => (
+            <div key={s.code != null ? s.code : i}
+              onMouseDown={e => { e.preventDefault(); pick(s); }}
+              onMouseEnter={() => setActive(i)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer', background: active === i ? 'var(--accent-surface, #EEF2FF)' : '#fff', borderBottom: i < suggestions.length - 1 ? '1px solid #F3F4F6' : 'none' }}>
+              {s.isHV && <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>★</span>}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</div>
+                {s.sub && <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>{s.sub}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Re-exported on window so other inlined files can use them without
 // caring about module ordering. (Babel-standalone compiles each
 // <script type="text/babel"> in isolation, so top-level names aren't
@@ -370,4 +478,5 @@ Object.assign(window, {
   summariseYears, useSupabaseData,
   readCache, writeCache,
   classifyAction,
+  SearchBox,
 });

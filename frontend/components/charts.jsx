@@ -631,10 +631,9 @@ function ItemForecastCard({ item }) {
 /* ===== ITEM FORECASTS GRID — scrollable 2-column grid of forecast charts ===== */
 function ItemForecastsGrid({ allData }) {
   const [search, setSearch] = React.useState('');
+  // Exact item code chosen from the dropdown (null = free-text search).
+  const [exactItem, setExactItem] = React.useState(null);
   const [hvOnly, setHvOnly] = React.useState(false);
-  const [showSuggestions, setShowSuggestions] = React.useState(false);
-  const [activeSuggestion, setActiveSuggestion] = React.useState(-1);
-  const searchRef = React.useRef(null);
   const gridRef = React.useRef(null);
   const [gridWidth, setGridWidth] = React.useState(0);
   // Track the grid container width so we can switch between a 2-column and
@@ -669,50 +668,19 @@ function ItemForecastsGrid({ allData }) {
   const filtered = React.useMemo(() => {
     let rows = items;
     if (hvOnly) rows = rows.filter(it => it.isHV);
-    if (search) {
+    if (exactItem) {
+      rows = rows.filter(it => it.code === exactItem);
+    } else if (search) {
       const s = search.toLowerCase();
       rows = rows.filter(it => (it.desc || '').toLowerCase().includes(s) || (it.code || '').toLowerCase().includes(s));
     }
     return rows;
-  }, [items, hvOnly, search]);
+  }, [items, hvOnly, search, exactItem]);
 
-  const suggestions = React.useMemo(() => {
-    if (!search || search.length < 1) return [];
-    const s = search.toLowerCase();
-    return items
-      .filter(it => it.desc.toLowerCase().includes(s) || it.code.toLowerCase().includes(s))
-      .slice(0, 8)
-      .map(it => ({ label: it.desc, sub: it.code, isHV: it.isHV }));
-  }, [items, search]);
-
-  const handleSearchKeyDown = (e) => {
-    if (e.key === 'ArrowDown') {
-      if (!showSuggestions || suggestions.length === 0) return;
-      e.preventDefault(); setActiveSuggestion(i => Math.min(i + 1, suggestions.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      if (!showSuggestions || suggestions.length === 0) return;
-      e.preventDefault(); setActiveSuggestion(i => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter') {
-      // Highlighted suggestion → pick that single item (same as click).
-      // Otherwise → keep current keyword, close dropdown so the grid shows ALL matches.
-      e.preventDefault();
-      if (showSuggestions && activeSuggestion >= 0 && suggestions[activeSuggestion]) {
-        setSearch(suggestions[activeSuggestion].label);
-      }
-      setShowSuggestions(false);
-      setActiveSuggestion(-1);
-      e.target.blur();
-    } else if (e.key === 'Escape') {
-      setShowSuggestions(false); setActiveSuggestion(-1);
-    }
-  };
-
-  // Close suggestions on outside click
-  React.useEffect(() => {
-    const handler = (e) => { if (searchRef.current && !searchRef.current.contains(e.target)) setShowSuggestions(false); };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  // Unique items for the search dropdown.
+  const searchOptions = React.useMemo(() =>
+    items.map(it => ({ label: it.desc || it.code, sub: it.code, code: it.code, isHV: it.isHV })),
+    [items]);
 
   const hvCount = items.filter(i => i.isHV).length;
   const hasAnyActuals = items.some(it => it.periods.some(p => p.actualClosingBal != null));
@@ -751,37 +719,15 @@ function ItemForecastsGrid({ allData }) {
 
       {/* Controls — search + filter + count */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10, flexShrink: 0, flexWrap: 'wrap' }}>
-        <div ref={searchRef} style={{ position: 'relative', flex: '0 0 300px' }}>
-          <input
-            value={search}
-            onChange={e => { setSearch(e.target.value); setShowSuggestions(true); setActiveSuggestion(-1); }}
-            onFocus={e => { e.target.style.borderColor = 'var(--accent)'; setShowSuggestions(true); }}
-            onBlur={e => e.target.style.borderColor = 'var(--border)'}
-            onKeyDown={handleSearchKeyDown}
-            placeholder="Search items…"
-            autoComplete="off"
-            style={{ width: '100%', padding: '7px 30px 7px 32px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, fontFamily: 'var(--font)', color: 'var(--text)', outline: 'none', background: '#fff', boxSizing: 'border-box' }}
-          />
-          <svg style={{ position: 'absolute', left: 10, top: 9, pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-          {search && (
-            <button onClick={() => { setSearch(''); setShowSuggestions(false); }} style={{ position: 'absolute', right: 8, top: 7, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>×</button>
-          )}
-          {showSuggestions && suggestions.length > 0 && (
-            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.10)', zIndex: 50, overflow: 'hidden' }}>
-              {suggestions.map((s, i) => (
-                <div key={i}
-                  onMouseDown={() => { setSearch(s.label); setShowSuggestions(false); setActiveSuggestion(-1); }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer', background: activeSuggestion === i ? 'var(--accent-surface, #EEF2FF)' : '#fff', borderBottom: i < suggestions.length - 1 ? '1px solid #F3F4F6' : 'none' }}>
-                  {s.isHV && <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>★</span>}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>{s.sub}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <SearchBox
+          value={search}
+          onType={(v) => { setSearch(v); setExactItem(null); }}
+          onPick={(opt) => { setSearch(opt.label); setExactItem(opt.code); }}
+          onClear={() => { setSearch(''); setExactItem(null); }}
+          options={searchOptions}
+          placeholder="Search items…"
+          width="0 0 300px"
+        />
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600,
           color: hvOnly ? 'var(--accent)' : 'var(--text-2)', cursor: 'pointer', userSelect: 'none',
           padding: '5px 10px', border: '1px solid', borderColor: hvOnly ? 'var(--accent)' : 'var(--border)',

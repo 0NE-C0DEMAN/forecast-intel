@@ -2,6 +2,8 @@
 
 function ItemExplorerPage({ allData, period }) {
   const [search, setSearch] = React.useState('');
+  // Exact item code chosen from the search dropdown (null = free-text search).
+  const [exactItem, setExactItem] = React.useState(null);
   const [hvFilter, setHvFilter] = React.useState('All');
   const [cohort, setCohort] = React.useState('all');
   const [scope, setScope] = React.useState('all'); // 'all' | 'last12' | 'last6' | 'last3' | 'single'
@@ -35,7 +37,7 @@ function ItemExplorerPage({ allData, period }) {
   const STICKY_MASK = 40;
 
   React.useEffect(() => { setSinglePeriod(period); }, [period]);
-  React.useEffect(() => { setPage(0); }, [search, hvFilter, cohort, scope, singlePeriod, sortCol, sortDir]);
+  React.useEffect(() => { setPage(0); }, [search, exactItem, hvFilter, cohort, scope, singlePeriod, sortCol, sortDir]);
 
   const allPeriods = React.useMemo(() => [...new Set(allData.map(d => d.period))].sort(), [allData]);
 
@@ -152,14 +154,26 @@ function ItemExplorerPage({ allData, period }) {
     return map;
   }, [itemSummaries]);
 
+  // Unique items for the search dropdown.
+  const searchOptions = React.useMemo(() =>
+    [...itemSummaries]
+      .map(d => ({ label: d.description || d.itemCode, sub: d.itemCode, code: d.itemCode, isHV: d.isHV }))
+      .sort((a, b) => (a.label || '').localeCompare(b.label || '')),
+    [itemSummaries]);
+
   const filtered = React.useMemo(() => {
     let rows = itemSummaries;
-    if (search) { const s = search.toLowerCase(); rows = rows.filter(d => (d.description || '').toLowerCase().includes(s) || (d.itemCode || '').toLowerCase().includes(s)); }
+    if (exactItem) {
+      rows = rows.filter(d => d.itemCode === exactItem);
+    } else if (search) {
+      const s = search.toLowerCase();
+      rows = rows.filter(d => (d.description || '').toLowerCase().includes(s) || (d.itemCode || '').toLowerCase().includes(s));
+    }
     if (hvFilter === 'HV') rows = rows.filter(d => d.isHV);
     else if (hvFilter === 'Standard') rows = rows.filter(d => !d.isHV);
     if (cohort !== 'all') rows = rows.filter(d => d.cohort === cohort);
     return rows;
-  }, [itemSummaries, search, hvFilter, cohort]);
+  }, [itemSummaries, search, exactItem, hvFilter, cohort]);
 
   const sorted = React.useMemo(() => {
     const arr = [...filtered];
@@ -218,12 +232,15 @@ function ItemExplorerPage({ allData, period }) {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', padding: '14px 24px 0' }}>
       {/* Top: search + KPIs */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, flexShrink: 0 }}>
-        <div style={{ position: 'relative', flex: '0 0 320px' }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search code or description…"
-            style={{ width: '100%', padding: '8px 12px 8px 34px', background: '#fff', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontSize: 12, fontFamily: 'var(--font)', outline: 'none' }}
-            onFocus={e => e.target.style.borderColor = 'var(--accent)'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-          <svg style={{ position: 'absolute', left: 11, top: 9, color: 'var(--text-3)' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-        </div>
+        <SearchBox
+          value={search}
+          onType={(v) => { setSearch(v); setExactItem(null); }}
+          onPick={(opt) => { setSearch(opt.label); setExactItem(opt.code); setSelectedCode(opt.code); }}
+          onClear={() => { setSearch(''); setExactItem(null); }}
+          options={searchOptions}
+          placeholder="Search code or description…"
+          width="0 0 320px"
+        />
         <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
           <MiniStat label="Items" value={filtered.length} color="var(--accent)" />
           <MiniStat label="High Value" value={hvCount} color="var(--accent)" pct={Math.round(hvCount/Math.max(filtered.length,1)*100)} />

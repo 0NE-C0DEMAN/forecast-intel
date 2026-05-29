@@ -629,6 +629,9 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
   const [sortDir, setSortDir] = useState('desc');
   const [actionFilter, setActionFilter] = useState('All');
   const [search, setSearch] = useState('');
+  // When the user picks a specific item from the search dropdown we store its
+  // exact item code here and filter to that one item only. Typing clears it.
+  const [exactItem, setExactItem] = useState(null);
   const [hvOnly, setHvOnly] = useState(false);
   const [matchFilter, setMatchFilter] = useState('All'); // All | Match | Mismatch
   const [periodFilter, setPeriodFilter] = useState('All');
@@ -647,6 +650,18 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
   const fmt = (v) => { if (v == null) return '—'; if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 1 }); return v; };
   const fmtSigned = (v) => v == null ? '—' : (v > 0 ? '+' : '') + fmt(v);
 
+  // Unique items (by code) for the search dropdown suggestions.
+  const searchOptions = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const d of (data || [])) {
+      if (!d.itemCode || seen.has(d.itemCode)) continue;
+      seen.add(d.itemCode);
+      out.push({ label: d.description || d.itemCode, sub: d.itemCode, code: d.itemCode, isHV: d.isHV });
+    }
+    return out.sort((a, b) => (a.label || '').localeCompare(b.label || ''));
+  }, [data]);
+
   const filtered = useMemo(() => {
     let rows = data;
     if (standalone && periodFilter !== 'All') rows = rows.filter(d => d.period === periodFilter);
@@ -654,12 +669,15 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
     if (hvOnly) rows = rows.filter(d => d.isHV);
     if (matchFilter === 'Match') rows = rows.filter(d => d.directionCorrect === true);
     if (matchFilter === 'Mismatch') rows = rows.filter(d => d.directionCorrect === false);
-    if (search) {
+    if (exactItem) {
+      // A specific item was chosen from the dropdown — show only its rows.
+      rows = rows.filter(d => d.itemCode === exactItem);
+    } else if (search) {
       const s = search.toLowerCase();
       rows = rows.filter(d => d.description?.toLowerCase().includes(s) || d.itemCode?.toLowerCase().includes(s));
     }
     return rows;
-  }, [data, actionFilter, hvOnly, matchFilter, search, periodFilter, standalone]);
+  }, [data, actionFilter, hvOnly, matchFilter, search, exactItem, periodFilter, standalone]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -694,7 +712,7 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
     setTablePage(0);
   };
 
-  React.useEffect(() => { setTablePage(0); }, [actionFilter, hvOnly, matchFilter, search, periodFilter]);
+  React.useEffect(() => { setTablePage(0); }, [actionFilter, hvOnly, matchFilter, search, exactItem, periodFilter]);
 
   // Summary stats for toolbar
   const matchCount = data.filter(d => d.directionCorrect === true).length;
@@ -729,14 +747,17 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
 
       {/* Toolbar row 1 — search + filters */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
-        {/* Search */}
-        <div style={{ position: 'relative', flex: '0 0 220px' }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item…"
-            style={{ width: '100%', padding: '6px 28px 6px 30px', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, fontFamily: 'var(--font)', color: 'var(--text)', outline: 'none', background: '#fff', boxSizing: 'border-box' }}
-            onFocus={e => e.target.style.borderColor = 'var(--accent)'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-          <svg style={{ position: 'absolute', left: 9, top: 8, pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-          {search && <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 7, top: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 14, lineHeight: 1 }}>×</button>}
-        </div>
+        {/* Search — typeahead dropdown. Pick a suggestion → filter to that
+            one item; type + Enter → all substring matches. */}
+        <SearchBox
+          value={search}
+          onType={(v) => { setSearch(v); setExactItem(null); }}
+          onPick={(opt) => { setSearch(opt.label); setExactItem(opt.code); }}
+          onClear={() => { setSearch(''); setExactItem(null); }}
+          options={searchOptions}
+          placeholder="Search item…"
+          width="0 0 240px"
+        />
 
         {/* Period filter (standalone view only).
             Up to 6 periods: pill strip inline.
