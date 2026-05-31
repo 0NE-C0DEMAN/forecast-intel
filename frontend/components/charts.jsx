@@ -1,10 +1,11 @@
 /* Charts v2 — comprehensive, multi-period ready */
 
 /* ===== DONUT ===== */
-function ActionDonut({ data }) {
-  const deliver = data.filter(d => d.predictedAction === 'Deliver').length;
-  const ret = data.filter(d => d.predictedAction === 'Return').length;
-  const nc = data.filter(d => d.predictedAction === 'No Change').length;
+function ActionDonut({ data, mode = 'predicted' }) {
+  const act = (d) => fcAction(d, mode);
+  const deliver = data.filter(d => act(d) === 'Deliver').length;
+  const ret = data.filter(d => act(d) === 'Return').length;
+  const nc = data.filter(d => act(d) === 'No Change').length;
   const total = data.length || 1;
   const [hov, setHov] = React.useState(null);
   const segs = [
@@ -36,9 +37,11 @@ function ActionDonut({ data }) {
 }
 
 /* ===== TOP N HORIZONTAL BARS ===== */
-function TopItemsBar({ data, action, maxItems = 15, color }) {
-  const items = data.filter(d => d.predictedAction === action).sort((a, b) => (b.quantity || 0) - (a.quantity || 0)).slice(0, maxItems);
-  const maxQ = items.length ? items[0].quantity || 1 : 1;
+function TopItemsBar({ data, action, maxItems = 15, color, mode = 'predicted' }) {
+  const items = data.filter(d => fcAction(d, mode) === action)
+    .map(d => ({ ...d, _q: fcQty(d, mode) }))
+    .sort((a, b) => b._q - a._q).slice(0, maxItems);
+  const maxQ = items.length ? (items[0]._q || 1) : 1;
   const [hIdx, setHIdx] = React.useState(null);
   if (!items.length) return <div style={{ padding: 24, color: 'var(--text-3)', fontSize: 13, textAlign: 'center' }}>No {action.toLowerCase()} items</div>;
   return (
@@ -48,9 +51,9 @@ function TopItemsBar({ data, action, maxItems = 15, color }) {
           onMouseEnter={() => setHIdx(i)} onMouseLeave={() => setHIdx(null)}>
           <div style={{ width: 130, fontSize: 11, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 450, paddingRight: 8, textAlign: 'right', flexShrink: 0 }} title={item.description}>{item.description}</div>
           <div style={{ flex: 1, height: 18, borderRadius: 4, background: '#F3F4F6', overflow: 'hidden' }}>
-            <div style={{ height: '100%', borderRadius: 4, width: `${(item.quantity || 0) / maxQ * 100}%`, background: color, transition: 'width .4s ease' }}></div>
+            <div style={{ height: '100%', borderRadius: 4, width: `${(item._q || 0) / maxQ * 100}%`, background: color, transition: 'width .4s ease' }}></div>
           </div>
-          <div style={{ width: 54, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text)', textAlign: 'right', fontWeight: 600, paddingLeft: 6, flexShrink: 0 }}>{Math.round(item.quantity || 0).toLocaleString()}</div>
+          <div style={{ width: 54, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text)', textAlign: 'right', fontWeight: 600, paddingLeft: 6, flexShrink: 0 }}>{Math.round(item._q || 0).toLocaleString()}</div>
         </div>
       ))}
     </div>
@@ -58,7 +61,7 @@ function TopItemsBar({ data, action, maxItems = 15, color }) {
 }
 
 /* ===== HV vs STANDARD STACKED BAR ===== */
-function HVBreakdown({ data }) {
+function HVBreakdown({ data, mode = 'predicted' }) {
   const groups = [{ label: 'High Value', items: data.filter(d => d.isHV) }, { label: 'Standard', items: data.filter(d => !d.isHV) }];
   const actions = ['Deliver', 'No Change', 'Return'];
   const colors = { Deliver: '#059669', 'No Change': '#D97706', Return: '#DC2626' };
@@ -71,7 +74,7 @@ function HVBreakdown({ data }) {
       <svg width="100%" height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} style={{ overflow: 'visible' }}>
         {[0, .5, 1].map((p, i) => { const y = padT + chartH - chartH * p; return <g key={i}><line x1={padL - 4} y1={y} x2={svgW - 10} y2={y} stroke="#F3F4F6" /><text x={padL - 8} y={y + 3.5} textAnchor="end" fontSize="9" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(maxStack * p)}</text></g>; })}
         {groups.map((g, gi) => {
-          const counts = actions.map(a => g.items.filter(d => d.predictedAction === a).length);
+          const counts = actions.map(a => g.items.filter(d => fcAction(d, mode) === a).length);
           let y = padT + chartH;
           const x = padL + 10 + gi * (barW + 50);
           // Decide which side the small-count callout lives on (outside the chart)
@@ -98,7 +101,7 @@ function HVBreakdown({ data }) {
                     ) : (
                       <g>
                         <line x1={lineX1} y1={yMid} x2={lineX2} y2={yMid} stroke={colors[actions[ci]]} strokeWidth={1} />
-                        <text x={calloutX} y={yMid + 3.5} textAnchor={calloutAnchor} fontSize="10" fontWeight="700" fill={colors[actions[ci]]} fontFamily="var(--mono)">{c}</text>
+                        <text x={calloutX} y={yMid + 3.5} textAnchor={calloutAnchor} fontSize="10" fontWeight="700" fill="var(--text)" fontFamily="var(--mono)">{c}</text>
                       </g>
                     )}
                   </g>
@@ -117,22 +120,25 @@ function HVBreakdown({ data }) {
 }
 
 /* ===== CLOSING BALANCE PORTFOLIO ===== */
-function ClosingBalancePortfolio({ data }) {
+function ClosingBalancePortfolio({ data, mode = 'predicted' }) {
+  const isActual = mode === 'actual';
   const prev = data.reduce((s, d) => s + (d.prevClosingBal || 0), 0);
-  const pred = data.reduce((s, d) => s + (d.predictedClosingBal || 0), 0);
-  const max = Math.max(prev, pred, 1);
+  const cur = data.reduce((s, d) => s + (fcBal(d, mode) || 0), 0);
+  const max = Math.max(prev, cur, 1);
   const fmtK = v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? Math.round(v/1e3)+'K' : Math.round(v);
   const w = 420, h = 110;
+  const curLabel = isActual ? 'Actual Closing' : 'Predicted Closing';
+  const curColor = isActual ? '#F59E0B' : 'var(--accent)';
   return (
     <div>
-      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 10 }}>Aggregate previous vs predicted closing balance for all filtered items.</div>
+      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 10 }}>Aggregate previous vs {isActual ? 'actual' : 'predicted'} closing balance for all filtered items.</div>
       <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`}>
         <text x={8} y={14} fontSize="10" fill="var(--text-3)" fontWeight="500">Previous Closing</text>
         <rect x={8} y={20} width={(prev/max)*(w-100)} height={32} rx={6} fill="#D1D5DB" />
         <text x={(prev/max)*(w-100)+16} y={42} fontSize="14" fontWeight="700" fill="var(--text-2)" fontFamily="var(--mono)">{fmtK(prev)}</text>
-        <text x={8} y={72} fontSize="10" fill="var(--text-3)" fontWeight="500">Predicted Closing</text>
-        <rect x={8} y={78} width={(pred/max)*(w-100)} height={32} rx={6} fill="var(--accent)" opacity=".75" />
-        <text x={(pred/max)*(w-100)+16} y={100} fontSize="14" fontWeight="700" fill="var(--accent)" fontFamily="var(--mono)">{fmtK(pred)}</text>
+        <text x={8} y={72} fontSize="10" fill="var(--text-3)" fontWeight="500">{curLabel}</text>
+        <rect x={8} y={78} width={(cur/max)*(w-100)} height={32} rx={6} fill={curColor} opacity=".75" />
+        <text x={(cur/max)*(w-100)+16} y={100} fontSize="14" fontWeight="700" fill={curColor} fontFamily="var(--mono)">{fmtK(cur)}</text>
       </svg>
     </div>
   );
@@ -140,9 +146,9 @@ function ClosingBalancePortfolio({ data }) {
 
 
 /* ===== ACTION FLOW BETWEEN PERIODS ===== */
-function ActionFlowSankey({ janData, febData, fromPeriod, toPeriod }) {
+function ActionFlowSankey({ janData, febData, fromPeriod, toPeriod, mode = 'predicted' }) {
   const janMap = {};
-  janData.forEach(d => { janMap[d.itemCode] = d.predictedAction; });
+  janData.forEach(d => { janMap[d.itemCode] = fcAction(d, mode); });
 
   const actions = ['Deliver', 'Return', 'No Change'];
   const colors  = { Deliver: '#059669', Return: '#DC2626', 'No Change': '#D97706' };
@@ -151,10 +157,10 @@ function ActionFlowSankey({ janData, febData, fromPeriod, toPeriod }) {
 
   // Build one group per "from" action: total + breakdown of where they went
   const groups = actions.map(from => {
-    const total = janData.filter(d => d.predictedAction === from).length;
+    const total = janData.filter(d => fcAction(d, mode) === from).length;
     const breakdown = actions.map(to => ({
       to,
-      count: febData.filter(d => janMap[d.itemCode] === from && d.predictedAction === to).length,
+      count: febData.filter(d => janMap[d.itemCode] === from && fcAction(d, mode) === to).length,
       stayed: from === to,
     }));
     return { from, total, breakdown };
@@ -277,12 +283,23 @@ function BalanceScatter({ data }) {
 }
 
 /* ===== MODEL ACCURACY TABLE — wired to real MAPE summary ===== */
-function ModelAccuracyTable({ periodGroups, modelLabel }) {
+function ModelAccuracyTable({ periodGroups, modelLabel, allData, metric = 'mape' }) {
+  const isApe = metric === 'ape';
+  const metricLabel = isApe ? 'APE' : 'MAPE';
+  // Per-period APE = mean of that month's individual item forecast errors (all
+  // items + HV items). MAPE mode keeps the model's reported MAPE_Summary values.
+  const apeByPeriod = React.useMemo(() => {
+    const m = {};
+    (allData || []).forEach(d => { if (d.ape == null) return; const k = d.period; if (!m[k]) m[k] = { all: [], hv: [] }; m[k].all.push(d.ape); if (d.isHV) m[k].hv.push(d.ape); });
+    const out = {};
+    Object.keys(m).forEach(k => { const a = m[k].all, h = m[k].hv; out[k] = { all: a.length ? a.reduce((s, v) => s + v, 0) / a.length : null, hv: h.length ? h.reduce((s, v) => s + v, 0) / h.length : null }; });
+    return out;
+  }, [allData]);
   // Filter to Monthly only — quarterly/half-yearly not used in this app
   const mapeData = (window.__MAPE_SUMMARY || []).filter(r => (r.model || '').toLowerCase().startsWith('month'));
   // Tighter cell sizing + smaller font so the table can fit a long list of
   // periods at the height of the chart next to it on Model Accuracy.
-  const thS = { padding: '6px 10px', textAlign: 'left', fontSize: 9, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: '2px solid var(--border)', background: '#FAFBFC', whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 1 };
+  const thS = { padding: '6px 10px', textAlign: 'left', fontSize: 10, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: '2px solid var(--border)', background: '#FAFBFC', whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 1 };
   const tdS = { padding: '6px 10px', fontSize: 11, borderBottom: '1px solid #F3F4F6', whiteSpace: 'nowrap' };
   const mapeColor = (v) => v == null ? 'var(--text-3)' : v > 100 ? '#DC2626' : v > 50 ? '#D97706' : '#059669';
 
@@ -298,7 +315,9 @@ function ModelAccuracyTable({ periodGroups, modelLabel }) {
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 10 }}>
-        Model accuracy summary from MAPE_Summary sheet. Lower MAPE = better accuracy.
+        {isApe
+          ? 'Average APE (absolute % error) of each month’s individual item forecasts — all items and HV. Lower = better.'
+          : 'Model accuracy summary from the MAPE_Summary sheet. Lower MAPE = better accuracy.'}
       </div>
       {/* Both axes scroll. Height is matched to the Portfolio chart next to
           us (~340px usable: SVG padT 14 + cH 280 + padB 44 + chrome). */}
@@ -308,8 +327,8 @@ function ModelAccuracyTable({ periodGroups, modelLabel }) {
             <tr>
               <th style={thS}>Period</th>
               <th style={thS}>Model</th>
-              <th style={{ ...thS, textAlign: 'right' }}>MAPE All (%)</th>
-              <th style={{ ...thS, textAlign: 'right' }}>MAPE HV (%)</th>
+              <th style={{ ...thS, textAlign: 'right' }}>{metricLabel} All (%)</th>
+              <th style={{ ...thS, textAlign: 'right' }}>{metricLabel} HV (%)</th>
               <th style={{ ...thS, textAlign: 'right' }}>Predicted</th>
               <th style={{ ...thS, textAlign: 'right' }}>Deliver</th>
               <th style={{ ...thS, textAlign: 'right' }}>Return</th>
@@ -317,22 +336,27 @@ function ModelAccuracyTable({ periodGroups, modelLabel }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
+            {rows.map((r, i) => {
+              const ap = apeByPeriod[r.period];
+              const eAll = isApe ? (ap ? ap.all : null) : r.mapeAll;
+              const eHV = isApe ? (ap ? ap.hv : null) : r.mapeHV;
+              return (
               <tr key={i}>
                 <td style={{ ...tdS, fontFamily: 'var(--mono)', fontWeight: 700 }}>{r.period}</td>
                 <td style={{ ...tdS, fontWeight: 500 }}>{r.model}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: mapeColor(r.mapeAll) }}>
-                  {r.mapeAll != null ? r.mapeAll.toFixed(1) + '%' : '—'}
+                <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: mapeColor(eAll) }}>
+                  {eAll != null ? eAll.toFixed(1) + '%' : '—'}
                 </td>
-                <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: mapeColor(r.mapeHV) }}>
-                  {r.mapeHV != null ? r.mapeHV.toFixed(1) + '%' : '—'}
+                <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: mapeColor(eHV) }}>
+                  {eHV != null ? eHV.toFixed(1) + '%' : '—'}
                 </td>
                 <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600 }}>{r.itemsPredicted ?? '—'}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600, color: '#059669' }}>{r.itemsDeliver ?? '—'}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600, color: '#DC2626' }}>{r.itemsReturn ?? '—'}</td>
                 <td style={tdS}>{r.tier}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -581,7 +605,7 @@ function ItemForecastCard({ item }) {
         {/* Card header */}
         <div style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-            <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text-3)', fontWeight: 600 }}>{item.code}</span>
+            <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text-2)', fontWeight: 600 }}>{item.code}</span>
             {item.isHV && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-surface)', padding: '2px 7px', borderRadius: 4, letterSpacing: '.02em' }}>HV</span>}
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
               <button onClick={zoomOut} disabled={zoom <= ZMIN + 0.001} title={`Zoom out (${Math.round(zoom*100)}%)`} aria-label="Zoom out"
@@ -594,7 +618,9 @@ function ItemForecastCard({ item }) {
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
               </button>
               <button onClick={() => setExpanded(true)} title="Expand chart" aria-label="Expand"
-                style={{ padding: '3px 6px', background: 'none', border: '1px solid var(--border)', borderRadius: 5, cursor: 'pointer', color: 'var(--text-3)', display: 'flex', alignItems: 'center' }}>
+                style={{ padding: '3px 6px', background: 'none', border: '1px solid var(--border)', borderRadius: 5, cursor: 'pointer', color: 'var(--text-2)', display: 'flex', alignItems: 'center', transition: 'background .12s, color .12s' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--hover)'; e.currentTarget.style.color = 'var(--accent)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-2)'; }}>
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
               </button>
             </div>
@@ -603,6 +629,9 @@ function ItemForecastCard({ item }) {
           {avgMapeLabel && <div style={{ fontSize: 11, fontWeight: 600, color: avgMapeCol, marginTop: 3 }}>{avgMapeLabel}</div>}
         </div>
         {renderChart({ xZoom: zoom })}
+        {/* Inline legend so Actual (indigo) vs Predicted (amber) is labelled
+            without having to expand the card. */}
+        <Legend fs={9} />
       </div>
 
       {/* Expanded modal */}
@@ -772,12 +801,12 @@ function ItemForecastsGrid({ allData }) {
 
 
 /* ===== ACTION COUNT BARS — grouped bars across all periods ===== */
-function ActionCountBars({ periodGroups }) {
+function ActionCountBars({ periodGroups, mode = 'predicted' }) {
   const actions = ['Deliver', 'Return', 'No Change'];
   const colors = { Deliver: '#059669', Return: '#DC2626', 'No Change': '#D97706' };
   const data = periodGroups.map(pg => ({
     period: pg.period,
-    counts: actions.map(a => pg.data.filter(d => d.predictedAction === a).length),
+    counts: actions.map(a => pg.data.filter(d => fcAction(d, mode) === a).length),
   }));
   const max = Math.max(...data.flatMap(d => d.counts), 1);
   const fmt = p => { const [y, m] = p.split('-'); const names = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[parseInt(m)]} ${y.slice(-2)}`; };
@@ -808,7 +837,7 @@ function ActionCountBars({ periodGroups }) {
                 return (
                   <g key={ci}>
                     <rect x={x} y={pT + cH - h} width={barW} height={Math.max(h, 2)} rx={4} fill={colors[actions[ci]]} opacity={.85} />
-                    {h > 18 && <text x={x + barW/2} y={pT + cH - h - 4} textAnchor="middle" fontSize="10" fontWeight="700" fill={colors[actions[ci]]} fontFamily="var(--mono)">{c}</text>}
+                    {c > 0 && <text x={x + barW/2} y={pT + cH - h - 4} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--text)" fontFamily="var(--mono)">{c}</text>}
                   </g>
                 );
               })}
@@ -826,16 +855,18 @@ function ActionCountBars({ periodGroups }) {
 }
 
 /* ===== TOP HIGH-VELOCITY ITEMS — most-moved items across all periods ===== */
-function HighVelocityItems({ allData, periodGroups }) {
+function HighVelocityItems({ allData, periodGroups, mode = 'predicted' }) {
   const rows = allData || (periodGroups ? periodGroups.flatMap(pg => pg.data) : []);
   const byItem = {};
   rows.forEach(d => {
-    if (!d.itemCode || d.quantity == null) return;
+    if (!d.itemCode) return;
+    const q = fcQty(d, mode);
+    const act = fcAction(d, mode);
     if (!byItem[d.itemCode]) byItem[d.itemCode] = { code: d.itemCode, desc: d.description, isHV: d.isHV, totalQty: 0, deliverQty: 0, returnQty: 0, periods: 0 };
-    byItem[d.itemCode].totalQty += d.quantity || 0;
+    byItem[d.itemCode].totalQty += q;
     byItem[d.itemCode].periods += 1;
-    if (d.predictedAction === 'Deliver') byItem[d.itemCode].deliverQty += d.quantity || 0;
-    else if (d.predictedAction === 'Return') byItem[d.itemCode].returnQty += d.quantity || 0;
+    if (act === 'Deliver') byItem[d.itemCode].deliverQty += q;
+    else if (act === 'Return') byItem[d.itemCode].returnQty += q;
   });
   const items = Object.values(byItem).sort((a, b) => b.totalQty - a.totalQty).slice(0, 12);
   if (!items.length) return <div style={{ padding: 24, color: 'var(--text-3)', fontSize: 13, textAlign: 'center' }}>No items with movement</div>;
@@ -894,17 +925,17 @@ function HighVelocityItems({ allData, periodGroups }) {
 }
 
 /* ===== HV vs STANDARD MOVEMENT BY PERIOD ===== */
-function HVMovementByPeriod({ periodGroups }) {
+function HVMovementByPeriod({ periodGroups, mode = 'predicted' }) {
   const fmt = p => { const [y, m] = p.split('-'); const names = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[parseInt(m)]} ${y.slice(-2)}`; };
   const data = periodGroups.map(pg => {
     const hv = pg.data.filter(d => d.isHV);
     const std = pg.data.filter(d => !d.isHV);
     return {
       period: pg.period,
-      hvDel: hv.filter(d => d.predictedAction === 'Deliver').length,
-      hvRet: hv.filter(d => d.predictedAction === 'Return').length,
-      stdDel: std.filter(d => d.predictedAction === 'Deliver').length,
-      stdRet: std.filter(d => d.predictedAction === 'Return').length,
+      hvDel: hv.filter(d => fcAction(d, mode) === 'Deliver').length,
+      hvRet: hv.filter(d => fcAction(d, mode) === 'Return').length,
+      stdDel: std.filter(d => fcAction(d, mode) === 'Deliver').length,
+      stdRet: std.filter(d => fcAction(d, mode) === 'Return').length,
     };
   });
   const max = Math.max(...data.flatMap(d => [d.hvDel + d.stdDel, d.hvRet + d.stdRet]), 1);
@@ -912,7 +943,9 @@ function HVMovementByPeriod({ periodGroups }) {
   const groupW = 80;
   const gapBetween = 20;
   const barW = (groupW - 8) / 2;
-  const cH = 200, pL = 56, pT = 14, pB = 44;
+  // Geometry matched to ActionCountBars (cH 240, pT 18, pB 44) so the two
+  // charts sitting side-by-side share the same x-axis baseline height.
+  const cH = 240, pL = 56, pT = 18, pB = 44;
   const tW = pL + periodCount * (groupW + gapBetween) + 16;
   const sH = pT + cH + pB;
 
@@ -938,14 +971,16 @@ function HVMovementByPeriod({ periodGroups }) {
           const xRet = x0 + barW + 8;
           return (
             <g key={row.period}>
-              {/* Deliver group */}
+              {/* Deliver group — total label on top, HV count inside the dark base */}
               <rect x={xDel} y={pT + cH - delHvH - delStdH} width={barW} height={delStdH} rx={3} fill="#34D399" opacity={.85} />
               <rect x={xDel} y={pT + cH - delHvH} width={barW} height={delHvH} fill="#047857" opacity={.95} />
               {delTotal > 0 && delH > 14 && <text x={xDel + barW/2} y={pT + cH - delH - 4} textAnchor="middle" fontSize="10" fontWeight="700" fill="#047857" fontFamily="var(--mono)">{delTotal}</text>}
+              {row.hvDel > 0 && delHvH >= 12 && <text x={xDel + barW/2} y={pT + cH - delHvH/2 + 3.5} textAnchor="middle" fontSize="9.5" fontWeight="800" fill="#fff" fontFamily="var(--mono)">{row.hvDel}</text>}
               {/* Return group */}
               <rect x={xRet} y={pT + cH - retHvH - retStdH} width={barW} height={retStdH} rx={3} fill="#FCA5A5" opacity={.85} />
               <rect x={xRet} y={pT + cH - retHvH} width={barW} height={retHvH} fill="#B91C1C" opacity={.95} />
               {retTotal > 0 && retH > 14 && <text x={xRet + barW/2} y={pT + cH - retH - 4} textAnchor="middle" fontSize="10" fontWeight="700" fill="#B91C1C" fontFamily="var(--mono)">{retTotal}</text>}
+              {row.hvRet > 0 && retHvH >= 12 && <text x={xRet + barW/2} y={pT + cH - retHvH/2 + 3.5} textAnchor="middle" fontSize="9.5" fontWeight="800" fill="#fff" fontFamily="var(--mono)">{row.hvRet}</text>}
               <text x={x0 + (groupW - 8)/2} y={pT + cH + 18} textAnchor="middle" fontSize="11" fill="var(--text-2)" fontWeight="500" fontFamily="var(--mono)">{fmt(row.period)}</text>
               <text x={xDel + barW/2} y={pT + cH + 32} textAnchor="middle" fontSize="10" fill="#059669">Del</text>
               <text x={xRet + barW/2} y={pT + cH + 32} textAnchor="middle" fontSize="10" fill="#DC2626">Ret</text>
@@ -965,7 +1000,7 @@ function HVMovementByPeriod({ periodGroups }) {
 }
 
 /* ===== ACTION × MAGNITUDE HEATMAP ===== */
-function ActionMagnitudeHeatmap({ data }) {
+function ActionMagnitudeHeatmap({ data, mode = 'predicted' }) {
   const buckets = [
     { label: '0–10', min: 0, max: 10 },
     { label: '10–50', min: 10, max: 50 },
@@ -977,7 +1012,7 @@ function ActionMagnitudeHeatmap({ data }) {
   ];
   const actions = ['Deliver', 'Return', 'No Change'];
   const colors = { Deliver: [5, 150, 105], Return: [220, 38, 38], 'No Change': [217, 119, 6] };
-  const matrix = actions.map(a => buckets.map(b => data.filter(d => d.predictedAction === a && (d.quantity || 0) >= b.min && (d.quantity || 0) <= b.max).length));
+  const matrix = actions.map(a => buckets.map(b => data.filter(d => { const q = fcQty(d, mode); return fcAction(d, mode) === a && q >= b.min && q <= b.max; }).length));
   const maxCell = Math.max(...matrix.flat(), 1);
   const cellW = 78, cellH = 44, pL = 84, pT = 26;
   const tW = pL + buckets.length * cellW + 20;
@@ -986,7 +1021,7 @@ function ActionMagnitudeHeatmap({ data }) {
 
   return (
     <div>
-      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 10 }}>Counts of items by predicted action × quantity magnitude. Darker = more items in cell.</div>
+      <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 10 }}>Counts of items by {mode === 'actual' ? 'actual' : 'predicted'} action × quantity magnitude. Darker = more items in cell.</div>
       <svg width="100%" height={tH} viewBox={`0 0 ${tW} ${tH}`} style={{ overflow: 'visible' }}>
         {/* Column headers */}
         {buckets.map((b, i) => (
@@ -1089,37 +1124,42 @@ function MapeBucketEditor({ thresholds, onChange }) {
   );
 }
 
-function MapeDistributionChart({ allData, segment = 'all', thresholds: thresholdsProp, label }) {
+function MapeDistributionChart({ allData, segment = 'all', thresholds: thresholdsProp, label, metric = 'mape' }) {
   const thresholds = thresholdsProp || MAPE_DEFAULT_THRESHOLDS;
   const buckets = React.useMemo(() => buildMapeBuckets(thresholds), [thresholds]);
 
-  const items = React.useMemo(() => {
+  // Two error views over the same % bands:
+  //   mape — one point per item = that item's average error across months.
+  //   ape  — one point per item-month = each forecast's own error.
+  const points = React.useMemo(() => {
+    if (metric === 'ape') {
+      return allData.filter(d => d.ape != null).map(d => ({ val: d.ape, isHV: d.isHV }));
+    }
     const byItem = {};
     allData.forEach(d => {
       if (d.itemMape == null) return;
       if (!byItem[d.itemCode]) byItem[d.itemCode] = { vals: [], isHV: d.isHV };
       byItem[d.itemCode].vals.push(d.itemMape);
     });
-    return Object.values(byItem).map(it => ({
-      avg: it.vals.reduce((s, v) => s + v, 0) / it.vals.length,
-      isHV: it.isHV,
-    }));
-  }, [allData]);
+    return Object.values(byItem).map(it => ({ val: it.vals.reduce((s, v) => s + v, 0) / it.vals.length, isHV: it.isHV }));
+  }, [allData, metric]);
 
-  const filtered = segment === 'hv' ? items.filter(it => it.isHV)
-    : segment === 'std' ? items.filter(it => !it.isHV)
-    : items;
+  const filtered = segment === 'hv' ? points.filter(p => p.isHV)
+    : segment === 'std' ? points.filter(p => !p.isHV)
+    : points;
 
   const counts = buckets.map(b => ({
     ...b,
-    count: filtered.filter(it => it.avg >= b.min && it.avg < b.max).length,
+    count: filtered.filter(p => p.val >= b.min && p.val < b.max).length,
   }));
 
   const total = filtered.length;
   const max = Math.max(...counts.map(c => c.count), 1);
   const wellThreshold = thresholds[Math.min(1, thresholds.length - 1)] || 50;
-  const wellCount = filtered.filter(it => it.avg < wellThreshold).length;
+  const wellCount = filtered.filter(p => p.val < wellThreshold).length;
   const pctWell = total ? Math.round(wellCount / total * 100) : 0;
+  const metricLabel = metric === 'ape' ? 'APE' : 'MAPE';
+  const unit = metric === 'ape' ? 'monthly forecast' : 'item';
 
   const bW = 56, cH = 200, padL = 44, padT = 14, padB = 44, gap = 16;
   const tW = padL + counts.length * (bW + gap) + 20;
@@ -1127,14 +1167,14 @@ function MapeDistributionChart({ allData, segment = 'all', thresholds: threshold
   const [hb, setHb] = React.useState(null);
 
   if (total === 0) {
-    return <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)', fontSize: 12 }}>No {label || segment} items with MAPE data.</div>;
+    return <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)', fontSize: 12 }}>No {label || segment} items with {metricLabel} data.</div>;
   }
 
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>
-        {total} {label || (segment === 'hv' ? 'high-value' : segment === 'std' ? 'standard' : '')} item{total === 1 ? '' : 's'}.{' '}
-        <strong style={{ color: pctWell >= 60 ? '#059669' : pctWell >= 30 ? '#D97706' : '#DC2626' }}>{pctWell}%</strong> have MAPE &lt; {wellThreshold}%.
+        {total.toLocaleString()} {label || (segment === 'hv' ? 'high-value' : segment === 'std' ? 'standard' : '')} {unit}{total === 1 ? '' : 's'}.{' '}
+        <strong style={{ color: pctWell >= 60 ? '#059669' : pctWell >= 30 ? '#D97706' : '#DC2626' }}>{pctWell}%</strong> have {metricLabel} &lt; {wellThreshold}%.
       </div>
       <svg width="100%" height={sH} viewBox={`0 0 ${tW} ${sH}`} style={{ overflow: 'visible' }}>
         {[0, .25, .5, .75, 1].map((p, i) => {
@@ -1163,13 +1203,30 @@ function MapeDistributionChart({ allData, segment = 'all', thresholds: threshold
 }
 
 /* ===== DIRECTION ACCURACY RING ===== */
-function DirectionAccuracyRing({ allData }) {
-  const withActuals = allData.filter(d => d.directionCorrect != null);
-  const correct = withActuals.filter(d => d.directionCorrect).length;
+function DirectionAccuracyByMonth({ allData }) {
+  const withActuals = (allData || []).filter(d => d.directionCorrect != null);
   const total = withActuals.length;
-  const pct = total > 0 ? correct / total : 0;
+  const correct = withActuals.filter(d => d.directionCorrect).length;
+  const overallPct = total > 0 ? correct / total : 0;
 
-  // By action
+  const fmt = p => { if (!p) return ''; const [y, m] = p.split('-'); const ns = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; return `${ns[parseInt(m)] || ''} '${y.slice(2)}`; };
+  const colorFor = pct => pct >= 0.8 ? '#059669' : pct >= 0.6 ? '#D97706' : '#DC2626';
+
+  // Month-wise: % of items whose predicted direction matched the actual move.
+  const byMonth = React.useMemo(() => {
+    const m = {};
+    withActuals.forEach(d => {
+      const k = d.period || '—';
+      if (!m[k]) m[k] = { period: k, correct: 0, total: 0 };
+      m[k].total++;
+      if (d.directionCorrect) m[k].correct++;
+    });
+    return Object.values(m)
+      .sort((a, b) => (a.period < b.period ? -1 : a.period > b.period ? 1 : 0))
+      .map(r => ({ ...r, pct: r.total ? r.correct / r.total : 0 }));
+  }, [withActuals]);
+
+  // Secondary cut: overall accuracy by predicted action.
   const actions = ['Deliver', 'Return', 'No Change'];
   const ac = (a) => a === 'Deliver' ? '#059669' : a === 'Return' ? '#DC2626' : '#D97706';
   const byAction = actions.map(a => {
@@ -1182,33 +1239,72 @@ function DirectionAccuracyRing({ allData }) {
     <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>No actual data available to compute direction accuracy.</div>
   );
 
-  const r = 54, cx = 68, cy = 68, sw = 14, circ = 2 * Math.PI * r;
-  const len = pct * circ - 2;
-  const color = pct >= 0.8 ? '#059669' : pct >= 0.6 ? '#D97706' : '#DC2626';
+  // SVG month bars
+  const slot = 46, pL = 26, pR = 10, pT = 16, plotH = 150;
+  const baseY = pT + plotH, lblH = 26, svgH = baseY + lblH;
+  const minW = Math.max(pL + byMonth.length * slot + pR, 320);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-      <svg width={136} height={136} viewBox="0 0 136 136" style={{ flexShrink: 0 }}>
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#F3F4F6" strokeWidth={sw} />
-        {pct > 0 && <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
-          strokeDasharray={`${len} ${circ - len}`} strokeDashoffset={0}
-          style={{ transform: 'rotate(-90deg)', transformOrigin: `${cx}px ${cy}px` }} />}
-        <text x={cx} y={cy - 2} textAnchor="middle" dominantBaseline="central" fill="var(--text)" fontSize="22" fontWeight="800" fontFamily="var(--mono)">{Math.round(pct * 100)}%</text>
-        <text x={cx} y={cy + 16} textAnchor="middle" fill="var(--text-3)" fontSize="10">correct</text>
-        <text x={cx} y={cy + 28} textAnchor="middle" fill="var(--text-3)" fontSize="10">{correct}/{total}</text>
-      </svg>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
-        {byAction.filter(b => b.total > 0).map(b => (
-          <div key={b.action} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 9, height: 9, borderRadius: 2, background: ac(b.action), flexShrink: 0 }}></div>
-            <div style={{ fontSize: 11, color: 'var(--text-2)', fontWeight: 500, flex: '0 0 auto', minWidth: 64 }}>{b.action}</div>
-            <div style={{ flex: 1, height: 6, background: '#F3F4F6', borderRadius: 3, overflow: 'hidden', minWidth: 24 }}>
-              <div style={{ height: '100%', borderRadius: 3, width: `${b.pct * 100}%`, background: b.pct >= .8 ? '#059669' : b.pct >= .6 ? '#D97706' : '#DC2626' }}></div>
+    <div style={{ display: 'flex', gap: 20, alignItems: 'stretch', flexWrap: 'wrap' }}>
+      {/* Month-wise trend (the hero) */}
+      <div style={{ flex: '1 1 440px', minWidth: 0 }}>
+        <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>
+          Share of items whose predicted direction matched the actual move, each month. Dashed line = overall average.
+        </div>
+        <div className="h-scroller">
+          <svg width="100%" height={svgH} viewBox={`0 0 ${minW} ${svgH}`} preserveAspectRatio="xMinYMid meet" style={{ display: 'block', minWidth: minW }}>
+            {/* y gridlines 0 / 50 / 100 */}
+            {[0, 0.5, 1].map((g, i) => {
+              const y = baseY - g * plotH;
+              return <g key={i}>
+                <line x1={pL} y1={y} x2={minW - pR} y2={y} stroke="#F3F4F6" />
+                <text x={pL - 5} y={y + 3} textAnchor="end" fontSize="8" fill="var(--text-3)" fontFamily="var(--mono)">{Math.round(g * 100)}</text>
+              </g>;
+            })}
+            {/* overall average reference */}
+            {(() => {
+              const y = baseY - overallPct * plotH;
+              return <g>
+                <line x1={pL} y1={y} x2={minW - pR} y2={y} stroke="var(--text-3)" strokeWidth="1" strokeDasharray="3 3" opacity="0.65" />
+                <text x={minW - pR} y={y - 3} textAnchor="end" fontSize="8" fill="var(--text-3)" fontFamily="var(--mono)">avg {Math.round(overallPct * 100)}%</text>
+              </g>;
+            })()}
+            {/* bars */}
+            {byMonth.map((r, i) => {
+              const bw = slot - 14, x = pL + i * slot + 6;
+              const h = Math.max(r.pct * plotH, r.total ? 1 : 0), y = baseY - h;
+              return (
+                <g key={r.period}>
+                  <rect x={x} y={y} width={bw} height={h} rx={3} fill={colorFor(r.pct)} opacity={0.9}>
+                    <title>{fmt(r.period)} · {r.correct}/{r.total} correct ({Math.round(r.pct * 100)}%)</title>
+                  </rect>
+                  <text x={x + bw / 2} y={y - 4} textAnchor="middle" fontSize="9" fontWeight="700" fill={colorFor(r.pct)} fontFamily="var(--mono)">{Math.round(r.pct * 100)}</text>
+                  <text x={x + bw / 2} y={baseY + 12} textAnchor="middle" fontSize="8" fill="var(--text-3)" fontFamily="var(--mono)">{fmt(r.period)}</text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      </div>
+      {/* Overall + per-action summary (context) */}
+      <div style={{ flex: '0 0 196px', display: 'flex', flexDirection: 'column', gap: 10, borderLeft: '1px solid var(--border)', paddingLeft: 18 }}>
+        <div>
+          <div style={{ fontSize: 30, fontWeight: 800, fontFamily: 'var(--mono)', color: colorFor(overallPct), lineHeight: 1 }}>{Math.round(overallPct * 100)}%</div>
+          <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 3 }}>overall · {correct}/{total} correct</div>
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700, marginTop: 2 }}>By predicted action</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+          {byAction.filter(b => b.total > 0).map(b => (
+            <div key={b.action} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 9, height: 9, borderRadius: 2, background: ac(b.action), flexShrink: 0 }}></div>
+              <div style={{ fontSize: 11, color: 'var(--text-2)', fontWeight: 500, flex: '0 0 auto', minWidth: 58 }}>{b.action}</div>
+              <div style={{ flex: 1, height: 6, background: '#F3F4F6', borderRadius: 3, overflow: 'hidden', minWidth: 20 }}>
+                <div style={{ height: '100%', borderRadius: 3, width: `${b.pct * 100}%`, background: colorFor(b.pct) }}></div>
+              </div>
+              <span style={{ fontSize: 11, fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--text-2)', flexShrink: 0 }}>{Math.round(b.pct * 100)}%</span>
             </div>
-            <span style={{ fontSize: 11, fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--text-2)', flexShrink: 0 }}>{Math.round(b.pct * 100)}%</span>
-            <span style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--mono)', flexShrink: 0 }}>{b.correct}/{b.total}</span>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1291,14 +1387,14 @@ function PortfolioActualVsPredicted({ periodGroups }) {
 }
 
 /* ===== ABC TIER × ACTION CROSS-TAB ===== */
-function ABCDistributionChart({ data, abcByCode }) {
+function ABCDistributionChart({ data, abcByCode, mode = 'predicted' }) {
   const tiers = ['A', 'B', 'C'];
   const actions = ['Deliver', 'Return', 'No Change'];
   const colors = { Deliver: '#059669', Return: '#DC2626', 'No Change': '#D97706' };
   const tierColors = { A: '#059669', B: '#D97706', C: '#9CA3AF' };
 
   const matrix = tiers.map(tier =>
-    actions.map(a => data.filter(d => abcByCode[d.itemCode] === tier && d.predictedAction === a).length)
+    actions.map(a => data.filter(d => abcByCode[d.itemCode] === tier && fcAction(d, mode) === a).length)
   );
   const totals = tiers.map((_, i) => matrix[i].reduce((s, c) => s + c, 0));
   const maxTotal = Math.max(...totals, 1);
@@ -1312,7 +1408,7 @@ function ABCDistributionChart({ data, abcByCode }) {
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>
-        Item count per ABC tier, stacked by predicted action. A = high-value, C = low-value items.
+        Item count per ABC tier, stacked by {mode === 'actual' ? 'actual' : 'predicted'} action. A = high-value, C = low-value items.
       </div>
       <svg width="100%" height={svgH} viewBox={`0 0 ${chartW} ${svgH}`} style={{ overflow: 'visible' }}>
         {tiers.map((tier, ti) => {
@@ -1379,7 +1475,7 @@ function ABCDistributionChart({ data, abcByCode }) {
 }
 
 /* ===== BALANCE BRACKET CHART ===== */
-function BalanceBracketChart({ data }) {
+function BalanceBracketChart({ data, mode = 'predicted' }) {
   const brackets = [
     { label: '< 1K',     min: 0,      max: 1000   },
     { label: '1K–10K',   min: 1000,   max: 10000  },
@@ -1393,11 +1489,10 @@ function BalanceBracketChart({ data }) {
 
   const matrix = brackets.map(br =>
     actions.map(a =>
-      data.filter(d =>
-        d.predictedAction === a &&
-        (d.predictedClosingBal || 0) >= br.min &&
-        (d.predictedClosingBal || 0) < br.max
-      ).length
+      data.filter(d => {
+        const bal = fcBal(d, mode) || 0;
+        return fcAction(d, mode) === a && bal >= br.min && bal < br.max;
+      }).length
     )
   );
   const totals = brackets.map((_, i) => matrix[i].reduce((s, c) => s + c, 0));
@@ -1410,7 +1505,7 @@ function BalanceBracketChart({ data }) {
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>
-        Items grouped by predicted closing balance. Shows where action decisions concentrate.
+        Items grouped by {mode === 'actual' ? 'actual' : 'predicted'} closing balance. Shows where action decisions concentrate.
       </div>
       <svg width="100%" height={svgH} viewBox={`0 0 ${chartW} ${svgH}`} style={{ overflow: 'visible' }}>
         {brackets.map((br, bi) => {
@@ -1463,4 +1558,4 @@ function BalanceBracketChart({ data }) {
   );
 }
 
-Object.assign(window, { ActionDonut, TopItemsBar, HVBreakdown, ClosingBalancePortfolio, ActionFlowSankey, BalanceScatter, ModelAccuracyTable, ActionMagnitudeHeatmap, ActionCountBars, HighVelocityItems, HVMovementByPeriod, ItemForecastCard, ItemForecastsGrid, MapeDistributionChart, MapeBucketEditor, MAPE_DEFAULT_THRESHOLDS, DirectionAccuracyRing, PortfolioActualVsPredicted, ABCDistributionChart, BalanceBracketChart });
+Object.assign(window, { ActionDonut, TopItemsBar, HVBreakdown, ClosingBalancePortfolio, ActionFlowSankey, BalanceScatter, ModelAccuracyTable, ActionMagnitudeHeatmap, ActionCountBars, HighVelocityItems, HVMovementByPeriod, ItemForecastCard, ItemForecastsGrid, MapeDistributionChart, MapeBucketEditor, MAPE_DEFAULT_THRESHOLDS, DirectionAccuracyByMonth, PortfolioActualVsPredicted, ABCDistributionChart, BalanceBracketChart });

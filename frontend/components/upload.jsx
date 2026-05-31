@@ -23,7 +23,9 @@ function UploadDataPage({ onOpenDataSource }) {
           <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sourceLabel}</div>
           <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>Loaded: {new Date().toLocaleDateString()}</div>
         </div>
-        <button onClick={() => window.__resetToBundled && window.__resetToBundled()} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--text-2)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)' }}>Reset to Bundled</button>
+        <button onClick={() => window.__resetToBundled && window.__resetToBundled()} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #CBD0D8', background: '#fff', color: 'var(--text)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)', transition: 'background .12s, border-color .12s' }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--hover)'; e.currentTarget.style.borderColor = 'var(--text-3)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#CBD0D8'; }}>Reset to Bundled</button>
       </div>
 
       {/* Upload area */}
@@ -101,7 +103,7 @@ function DropZone() {
         onDragLeave={() => setDragOver(false)}
         onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); }}
         style={{
-          border: `2px dashed ${dragOver ? 'var(--accent)' : 'var(--border)'}`,
+          border: `2px dashed ${dragOver ? 'var(--accent)' : '#C4C9D2'}`,
           borderRadius: 12, padding: '28px 20px', textAlign: 'center', cursor: 'pointer',
           background: dragOver ? 'rgba(79,70,229,.04)' : '#FAFBFC',
           transition: 'all .15s',
@@ -109,7 +111,7 @@ function DropZone() {
         <input type="file" ref={fileRef} accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
           onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]); }} />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={dragOver ? 'var(--accent)' : 'var(--text-3)'} strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={dragOver ? 'var(--accent)' : 'var(--text-2)'} strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
           <div>
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Click to browse, or drag and drop</span>
             <span style={{ fontSize: 12, color: 'var(--text-3)', marginLeft: 8 }}>200MB per file · CSV, XLSX, XLS</span>

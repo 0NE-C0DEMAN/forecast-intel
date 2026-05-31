@@ -1,6 +1,6 @@
 /* Item Explorer v2 — per-item rows, cohort tabs, period scope, rich detail panel */
 
-function ItemExplorerPage({ allData, period }) {
+function ItemExplorerPage({ allData, period, mode = 'predicted' }) {
   const [search, setSearch] = React.useState('');
   // Exact item code chosen from the search dropdown (null = free-text search).
   const [exactItem, setExactItem] = React.useState(null);
@@ -62,30 +62,39 @@ function ItemExplorerPage({ allData, period }) {
     });
     Object.values(byItem).forEach(it => it.all.sort((a, b) => a.period.localeCompare(b.period)));
 
+    const isActual = mode === 'actual';
     return Object.values(byItem).map(it => {
       const inScope = it.all.filter(d => scopedPeriods.includes(d.period));
       const last = it.all[it.all.length - 1];
-      // Cohort window: last 6 periods (or all if <6)
-      const cWin = it.all.slice(-6);
-      const acts = cWin.map(d => d.predictedAction);
+      // In actual mode the behavioural views only make sense over months that
+      // actually have an outcome; future months (no actuals) are excluded.
+      const behaviorAll = isActual ? it.all.filter(d => d.actualAction != null) : it.all;
+      const inScopeB = isActual ? inScope.filter(d => d.actualAction != null) : inScope;
+      const latestRow = isActual ? (behaviorAll[behaviorAll.length - 1] || last) : last;
+      // Cohort window: last 6 (mode-usable) periods
+      const cWin = behaviorAll.slice(-6);
+      const acts = cWin.map(d => fcAction(d, mode));
       const flips = acts.reduce((s, a, i) => s + (i > 0 && a !== acts[i-1] ? 1 : 0), 0);
       const delPct = acts.filter(a => a === 'Deliver').length / Math.max(acts.length, 1);
       const retPct = acts.filter(a => a === 'Return').length / Math.max(acts.length, 1);
       const ncPct = acts.filter(a => a === 'No Change').length / Math.max(acts.length, 1);
-      // Recent quantity activity
-      const recentQty = it.all.slice(-3).reduce((s, d) => s + (d.quantity || 0), 0);
-      // Determine cohort
+      // Recent activity (mode-aware movement magnitude)
+      const recentQty = behaviorAll.slice(-3).reduce((s, d) => s + fcQty(d, mode), 0);
+      // Determine cohort. "At Risk" is always prediction-based — it's a
+      // forward-looking depletion risk with no actual equivalent — so it is
+      // evaluated on the predicted closing balance regardless of the mode.
       let cohortTag = 'mixed';
       if (last && last.predictedClosingBal != null && last.predictedClosingBal <= 0) cohortTag = 'atRisk';
-      else if (recentQty === 0 && it.all.length >= 3) cohortTag = 'dormant';
+      else if (acts.length === 0) cohortTag = 'dormant';
+      else if (recentQty === 0 && behaviorAll.length >= 3) cohortTag = 'dormant';
       else if (delPct >= 0.8) cohortTag = 'alwaysDeliver';
       else if (retPct >= 0.8) cohortTag = 'alwaysReturn';
       else if (flips >= 4) cohortTag = 'volatile';
       else if (flips === 0 && ncPct >= 0.8) cohortTag = 'stable';
       else if (flips <= 1) cohortTag = 'stable';
 
-      // Scoped stats
-      const totalQty = inScope.reduce((s, d) => s + (d.quantity || 0), 0);
+      // Scoped stats (mode-aware)
+      const totalQty = inScopeB.reduce((s, d) => s + fcQty(d, mode), 0);
       // MAPE: average of non-null itemMape values across scoped records
       const mapeVals = inScope.map(d => d.itemMape).filter(v => v != null);
       const avgMape = mapeVals.length ? mapeVals.reduce((s, v) => s + v, 0) / mapeVals.length : null;
@@ -96,26 +105,26 @@ function ItemExplorerPage({ allData, period }) {
       // Error %: signed percentage of actual balance (positive = over-predicted, negative = under-predicted)
       const latestErrorPct = (latestError != null && latestActualBal != null && latestActualBal !== 0)
         ? (latestError / latestActualBal) * 100 : null;
-      // Direction correct rate
+      // Direction correct rate (always predicted-vs-actual — a forecast metric)
       const scopedWithActual = inScope.filter(d => d.directionCorrect != null);
       const dirCorrectRate = scopedWithActual.length ? scopedWithActual.filter(d => d.directionCorrect).length / scopedWithActual.length : null;
-      const scopedActs = inScope.map(d => d.predictedAction);
+      const scopedActs = inScopeB.map(d => fcAction(d, mode));
       const scopedFlips = scopedActs.reduce((s, a, i) => s + (i > 0 && a !== scopedActs[i-1] ? 1 : 0), 0);
-      // Streak: count of last consecutive same action in scope
+      // Streak: trailing run of the same action in scope
       let streak = 0, streakAction = null;
-      if (inScope.length > 0) {
-        const lastA = inScope[inScope.length - 1].predictedAction;
+      if (scopedActs.length > 0) {
+        const lastA = scopedActs[scopedActs.length - 1];
         streakAction = lastA;
-        for (let i = inScope.length - 1; i >= 0; i--) {
-          if (inScope[i].predictedAction === lastA) streak++; else break;
+        for (let i = scopedActs.length - 1; i >= 0; i--) {
+          if (scopedActs[i] === lastA) streak++; else break;
         }
       }
       // Volatility: flips per period
-      const volatility = inScope.length > 1 ? scopedFlips / (inScope.length - 1) : 0;
-      // Predominant action
+      const volatility = scopedActs.length > 1 ? scopedFlips / (scopedActs.length - 1) : 0;
+      // Predominant action (mode-aware)
       const counts = { Deliver: 0, Return: 0, 'No Change': 0 };
-      inScope.forEach(d => { if (counts[d.predictedAction] != null) counts[d.predictedAction]++; });
-      const predominant = inScope.length > 0 ? Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0] : null;
+      scopedActs.forEach(a => { if (counts[a] != null) counts[a]++; });
+      const predominant = scopedActs.length > 0 ? Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0] : null;
       // ABC class based on totalQty across full history
       const fullTotal = it.all.reduce((s, d) => s + (d.quantity || 0), 0);
 
@@ -124,8 +133,8 @@ function ItemExplorerPage({ allData, period }) {
         description: it.description,
         isHV: it.isHV,
         cohort: cohortTag,
-        latestAction: last?.predictedAction,
-        latestBal: last?.predictedClosingBal,
+        latestAction: latestRow ? fcAction(latestRow, mode) : null,
+        latestBal: latestRow ? fcBal(latestRow, mode) : null,
         latestDiff: last?.difference,
         totalQty,
         streak,
@@ -143,7 +152,7 @@ function ItemExplorerPage({ allData, period }) {
         dirCorrectRate,
       };
     });
-  }, [allData, scopedPeriods]);
+  }, [allData, scopedPeriods, mode]);
 
   // ABC class assignment: computed once over full history
   const abcByCode = React.useMemo(() => {
@@ -223,10 +232,14 @@ function ItemExplorerPage({ allData, period }) {
 
   const thStyle = (col, align) => ({
     padding: '8px 10px', textAlign: align || 'left', fontSize: 10, fontWeight: 600,
-    color: sortCol === col ? 'var(--accent)' : 'var(--text-3)',
+    color: sortCol === col ? 'var(--accent)' : 'var(--text-2)',
     cursor: col ? 'pointer' : 'default', userSelect: 'none', textTransform: 'uppercase', letterSpacing: '.05em',
     borderBottom: '2px solid var(--border)', whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 2, background: '#FAFBFC',
   });
+  // Sort caret shown in headers (Item Explorer had no sort indicator before).
+  const sortCaret = (col) => !col ? null : (sortCol === col
+    ? <span style={{ fontSize: 11, marginLeft: 3, color: 'var(--accent)' }}>{sortDir === 'asc' ? '▲' : '▼'}</span>
+    : <span style={{ fontSize: 9, marginLeft: 3, color: 'var(--text-3)', opacity: .6 }}>↕</span>);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', padding: '14px 24px 0' }}>
@@ -271,11 +284,11 @@ function ItemExplorerPage({ allData, period }) {
             padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font)',
             border: '1px solid', borderColor: hvFilter === o ? 'var(--accent)' : 'var(--border)',
             background: hvFilter === o ? 'rgba(79,70,229,.06)' : 'transparent',
-            color: hvFilter === o ? 'var(--accent)' : 'var(--text-3)',
+            color: hvFilter === o ? 'var(--accent)' : 'var(--text-2)',
           }}>{o === 'HV' ? 'High Value' : o}</button>
         ))}</FilterGroup>
         {(cohort !== 'all' || hvFilter !== 'All' || search) && (
-          <button onClick={() => { setCohort('all'); setHvFilter('All'); setSearch(''); }} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font)', border: '1px solid var(--border)', background: '#fff', color: 'var(--text-3)', marginLeft: 'auto' }}>Clear filters</button>
+          <button onClick={() => { setCohort('all'); setHvFilter('All'); setSearch(''); setExactItem(null); }} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)', border: '1px solid var(--border)', background: '#fff', color: 'var(--text-2)', marginLeft: 'auto' }}>Clear filters</button>
         )}
       </div>
 
@@ -302,17 +315,17 @@ function ItemExplorerPage({ allData, period }) {
                         width: STICKY_MASK, background: '#FAFBFC', pointerEvents: 'none',
                       }} />
                     )}
-                    Item
+                    Item{sortCaret('description')}
                   </th>
                   <th style={{ ...thStyle(null), width: 36, textAlign: 'center' }}>ABC</th>
-                  <th style={thStyle('cohort')} onClick={() => handleSort('cohort')}>Behavior</th>
-                  <th style={thStyle('latestAction')} onClick={() => handleSort('latestAction')}>Action</th>
-                  <th style={{ ...thStyle('latestBal', 'right'), minWidth: 110 }} onClick={() => handleSort('latestBal')}>Balance</th>
-                  <th style={{ ...thStyle('avgMape', 'right'), minWidth: 100 }} onClick={() => handleSort('avgMape')}>Accuracy</th>
-                  <th style={{ ...thStyle('dirCorrectRate', 'right'), minWidth: 72 }} onClick={() => handleSort('dirCorrectRate')}>Dir. Match</th>
+                  <th style={thStyle('cohort')} onClick={() => handleSort('cohort')}>Behavior{sortCaret('cohort')}</th>
+                  <th style={thStyle('latestAction')} onClick={() => handleSort('latestAction')}>Action{sortCaret('latestAction')}</th>
+                  <th style={{ ...thStyle('latestBal', 'right'), minWidth: 110 }} onClick={() => handleSort('latestBal')}>Balance{sortCaret('latestBal')}</th>
+                  <th style={{ ...thStyle('avgMape', 'right'), minWidth: 100 }} onClick={() => handleSort('avgMape')}>Accuracy{sortCaret('avgMape')}</th>
+                  <th style={{ ...thStyle('dirCorrectRate', 'right'), minWidth: 72 }} onClick={() => handleSort('dirCorrectRate')}>Dir. Match{sortCaret('dirCorrectRate')}</th>
                   <th style={{ ...thStyle(null), minWidth: 72, textAlign: 'right' }}>Trend</th>
-                  <th style={{ ...thStyle('totalQty', 'right') }} onClick={() => handleSort('totalQty')}>Movement</th>
-                  <th style={{ ...thStyle('volatility', 'right'), minWidth: 96 }} onClick={() => handleSort('volatility')}>Volatility</th>
+                  <th style={{ ...thStyle('totalQty', 'right') }} onClick={() => handleSort('totalQty')}>Movement{sortCaret('totalQty')}</th>
+                  <th style={{ ...thStyle('volatility', 'right'), minWidth: 96 }} onClick={() => handleSort('volatility')}>Volatility{sortCaret('volatility')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -420,7 +433,7 @@ function ItemExplorerPage({ allData, period }) {
                       <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: mapeCol }}>
                           {row.avgMape != null ? row.avgMape.toFixed(1) + '%' : '—'}
-                          <span style={{ fontWeight: 400, fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font)', marginLeft: 2 }}>MAPE</span>
+                          <span style={{ fontWeight: 500, fontSize: 9.5, color: 'var(--text-2)', fontFamily: 'var(--font)', marginLeft: 2 }}>MAPE</span>
                         </div>
                         {row.latestErrorPct != null && (
                           <div style={{ fontSize: 10, fontFamily: 'var(--mono)', color: errCol, marginTop: 1 }}>
@@ -444,8 +457,8 @@ function ItemExplorerPage({ allData, period }) {
                       {/* Trend sparkline */}
                       <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4, alignItems: 'center' }}>
-                          <MiniSparkline data={row.all} />
-                          <MiniActionDots data={row.all} ac={ac} />
+                          <MiniSparkline data={row.all} mode={mode} />
+                          <MiniActionDots data={row.all} ac={ac} mode={mode} />
                         </div>
                       </td>
 
@@ -479,7 +492,7 @@ function ItemExplorerPage({ allData, period }) {
         {/* Side panel */}
         <div style={{ width: 380, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'auto' }}>
           {selectedItem ? (
-            <RichDetailPanel item={selectedItem} abc={abcByCode[selectedItem.itemCode]} onClose={() => setSelectedCode(null)} ac={ac} abg={abg} fmt={fmt} cohortMeta={cohorts.find(c => c.id === selectedItem.cohort)} />
+            <RichDetailPanel item={selectedItem} abc={abcByCode[selectedItem.itemCode]} onClose={() => setSelectedCode(null)} ac={ac} abg={abg} fmt={fmt} cohortMeta={cohorts.find(c => c.id === selectedItem.cohort)} mode={mode} />
           ) : (
             <CohortBreakdownPanel itemSummaries={filtered} cohorts={cohorts} cohortCounts={cohortCounts} onCohortClick={setCohort} ac={ac} />
           )}
@@ -490,8 +503,9 @@ function ItemExplorerPage({ allData, period }) {
 }
 
 /* ===== Rich Detail Panel ===== */
-function RichDetailPanel({ item, abc, onClose, ac, abg, fmt, cohortMeta }) {
+function RichDetailPanel({ item, abc, onClose, ac, abg, fmt, cohortMeta, mode = 'predicted' }) {
   const series = item.all;
+  const isActual = mode === 'actual';
   const fmtPeriod = p => {
     if (!p) return '';
     const mM = p.match(/^(\d{4})-(\d{2})$/);
@@ -531,11 +545,21 @@ function RichDetailPanel({ item, abc, onClose, ac, abg, fmt, cohortMeta }) {
   const ribbonH = 24;
   const cellW = w / series.length;
 
-  // Stats
-  const totalMoved = series.reduce((s, d) => s + (d.quantity || 0), 0);
-  const acts = series.map(d => d.predictedAction);
+  // Stats describe the action history in the selected mode (Predicted or
+  // Actual), matching the ribbon below and the header toggle. In actual mode
+  // we restrict to the months that actually have an outcome.
+  const statRows = isActual ? series.filter(d => d.actualAction != null) : series;
+  const acts = statRows.map(d => fcAction(d, mode));
+  const statHint = isActual
+    ? `${acts.length} period${acts.length === 1 ? '' : 's'} w/ actuals`
+    : `${acts.length} forecast period${acts.length === 1 ? '' : 's'}`;
+  // Total moved = real units that changed hands (|actual − previous| closing
+  // balance) in actual mode, else the predicted action quantity.
+  const totalMoved = isActual
+    ? statRows.reduce((s, d) => s + Math.abs((d.actualClosingBal || 0) - (d.prevClosingBal || 0)), 0)
+    : series.reduce((s, d) => s + (d.quantity || 0), 0);
   const flips = acts.reduce((s, a, i) => s + (i > 0 && a !== acts[i-1] ? 1 : 0), 0);
-  let longestStreak = 1, longestAction = acts[0], cur = 1;
+  let longestStreak = acts.length ? 1 : 0, longestAction = acts[0], cur = 1;
   for (let i = 1; i < acts.length; i++) {
     if (acts[i] === acts[i-1]) { cur++; if (cur > longestStreak) { longestStreak = cur; longestAction = acts[i]; } }
     else cur = 1;
@@ -609,12 +633,12 @@ function RichDetailPanel({ item, abc, onClose, ac, abg, fmt, cohortMeta }) {
         </svg>
       </div>
 
-      {/* Action ribbon — based on ACTUAL action (falls back to a neutral cell when actuals aren't in yet).
-          Each cell is at least 20px wide so the D/R/N letter stays legible
-          even on multi-year backtests. When the ribbon outgrows its parent
-          width it scrolls horizontally via the themed h-scroller. */}
+      {/* Action ribbon — follows the Predicted/Actual mode. In actual mode a
+          neutral cell is shown for months with no actual yet. Each cell is at
+          least 20px wide so the D/R/N letter stays legible even on multi-year
+          backtests; it scrolls horizontally via the themed h-scroller. */}
       <div>
-        <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: 'var(--text-2)' }}>Action History <span style={{ fontWeight: 500, color: 'var(--text-3)', fontSize: 10 }}>· actuals</span></div>
+        <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: 'var(--text-2)' }}>Action History <span style={{ fontWeight: 500, color: 'var(--text-3)', fontSize: 10 }}>· {isActual ? 'actual' : 'predicted'}</span></div>
         {(() => {
           const cellMin = 20;
           const ribbonW = Math.max(w, series.length * cellMin);
@@ -624,7 +648,7 @@ function RichDetailPanel({ item, abc, onClose, ac, abg, fmt, cohortMeta }) {
               <svg width={ribbonW} height={ribbonH} viewBox={`0 0 ${ribbonW} ${ribbonH}`} style={{ display: 'block' }}>
                 {series.map((p, i) => {
                   const xp = i * cw;
-                  const a = p.actualAction;
+                  const a = fcAction(p, mode);
                   const hasActual = a != null;
                   const letter = a === 'Deliver' ? 'D' : a === 'Return' ? 'R' : a === 'No Change' ? 'N' : '—';
                   const fill = hasActual ? ac(a) : '#E5E7EB';
@@ -659,8 +683,8 @@ function RichDetailPanel({ item, abc, onClose, ac, abg, fmt, cohortMeta }) {
 
       {/* Stats grid */}
       <div style={{ borderTop: '1px solid #F3F4F6', paddingTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 11 }}>
-        <DetailStat label="Total Moved" value={fmtK(totalMoved)} hint="across all periods" />
-        <DetailStat label="Direction Changes" value={flips} hint={`in ${series.length} period${series.length === 1 ? '' : 's'}`} />
+        <DetailStat label="Total Moved" value={fmtK(totalMoved)} hint={isActual ? 'actual units moved' : 'predicted units'} />
+        <DetailStat label="Direction Changes" value={flips} hint={statHint} />
         <DetailStat label="Longest Streak" value={`${longestStreak}×`} hint={longestAction} hintColor={ac(longestAction)} />
         <DetailStat label="Predominant Action" value={predominant[0]} valueColor={ac(predominant[0])} hint={`${Math.round(predominant[1] / acts.length * 100)}% of time`} />
         {(() => {
@@ -705,6 +729,10 @@ function CohortBreakdownPanel({ itemSummaries, cohorts, cohortCounts, onCohortCl
   const total = itemSummaries.length || 1;
   const visibleCohorts = cohorts.filter(c => c.id !== 'all' && cohortCounts[c.id] > 0);
   const max = Math.max(...visibleCohorts.map(c => cohortCounts[c.id]), 1);
+  // Compact balance formatter for the inline "bal N" labels below. (Without
+  // this local definition the At-Risk list throws "fmt is not defined" and
+  // takes the whole Item Explorer page down with it.)
+  const fmt = v => v == null ? '—' : v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(1) + 'K' : Math.round(v).toLocaleString();
 
   // Top volatile, top at-risk
   const volatile = [...itemSummaries].filter(it => it.cohort === 'volatile').slice(0, 4);
@@ -744,7 +772,7 @@ function CohortBreakdownPanel({ itemSummaries, cohorts, cohortCounts, onCohortCl
             {atRisk.map(it => (
               <div key={it.itemCode} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '4px 0', borderBottom: '1px solid #F3F4F6' }}>
                 <div style={{ flex: 1, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={it.description}>{it.description}</div>
-                <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: '#DC2626', fontWeight: 700 }}>bal {it.latestBal}</span>
+                <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: '#DC2626', fontWeight: 700 }}>bal {fmt(it.latestBal)}</span>
               </div>
             ))}
           </div>
@@ -825,16 +853,16 @@ function ScopePicker({ value, onChange, singlePeriod, onSinglePeriodChange, allP
 }
 
 /* ===== Mini Sparkline (last 8 periods predicted closing balance) ===== */
-function MiniSparkline({ data, w = 52, h = 18 }) {
-  const last8 = (data || []).slice(-8);
+function MiniSparkline({ data, w = 52, h = 18, mode = 'predicted' }) {
+  const last8 = (data || []).filter(d => fcBal(d, mode) != null).slice(-8);
   if (last8.length < 2) return null;
-  const vals = last8.map(d => d.predictedClosingBal || 0);
+  const vals = last8.map(d => fcBal(d, mode) || 0);
   const min = Math.min(...vals, 0);
   const max = Math.max(...vals, min + 1);
   const range = max - min;
   const px = i => (i / (last8.length - 1)) * w;
   const py = v => h - 2 - ((v - min) / range) * (h - 4);
-  const pts = last8.map((d, i) => `${px(i).toFixed(1)},${py(d.predictedClosingBal || 0).toFixed(1)}`).join(' ');
+  const pts = last8.map((d, i) => `${px(i).toFixed(1)},${py(fcBal(d, mode) || 0).toFixed(1)}`).join(' ');
   const last = vals[vals.length - 1];
   const prev = vals[vals.length - 2];
   const color = last > prev * 1.01 ? '#059669' : last < prev * 0.99 ? '#DC2626' : '#D97706';
@@ -849,15 +877,15 @@ function MiniSparkline({ data, w = 52, h = 18 }) {
 }
 
 /* ===== Mini Action Dots (last 6 periods' actions as colored squares) ===== */
-function MiniActionDots({ data, ac }) {
-  const last6 = (data || []).slice(-6);
+function MiniActionDots({ data, ac, mode = 'predicted' }) {
+  const last6 = (data || []).filter(d => fcAction(d, mode) != null).slice(-6);
   if (!last6.length) return null;
   return (
     <div style={{ display: 'flex', gap: 2, alignItems: 'center', flexShrink: 0 }}>
-      {last6.map((d, i) => (
-        <div key={i} title={`${d.period}: ${d.predictedAction}`}
-          style={{ width: 5, height: 10, borderRadius: 1.5, background: ac(d.predictedAction), opacity: 0.5 + 0.5 * (i / (last6.length - 1 || 1)) }} />
-      ))}
+      {last6.map((d, i) => { const a = fcAction(d, mode); return (
+        <div key={i} title={`${d.period}: ${a}`}
+          style={{ width: 5, height: 10, borderRadius: 1.5, background: ac(a), opacity: 0.5 + 0.5 * (i / (last6.length - 1 || 1)) }} />
+      ); })}
     </div>
   );
 }
@@ -898,7 +926,7 @@ function SmallPgBtn({ label, active, disabled, onClick }) {
       color: active ? '#fff' : disabled ? 'var(--text-3)' : 'var(--text-2)',
       fontSize: 10, fontWeight: 600, cursor: disabled ? 'default' : 'pointer',
       fontFamily: 'var(--font)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      opacity: disabled ? .4 : 1,
+      opacity: disabled ? .55 : 1,
     }}>{label}</button>
   );
 }

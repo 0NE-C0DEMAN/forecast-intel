@@ -20,7 +20,9 @@ function DataSourceModal({ open, onClose }) {
         {/* Header */}
         <div style={{ padding: '18px 22px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
           <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: '-0.02em' }}>Connect Data Source</div>
-          <button onClick={onClose} style={{ background: 'var(--surface-2)', border: 'none', color: 'var(--text-3)', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>×</button>
+          <button onClick={onClose} aria-label="Close" style={{ background: 'var(--surface-2)', border: 'none', color: 'var(--text-2)', cursor: 'pointer', width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, lineHeight: 1, transition: 'background .12s, color .12s' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--hover)'; e.currentTarget.style.color = 'var(--text)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.color = 'var(--text-2)'; }}>×</button>
         </div>
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
@@ -28,7 +30,7 @@ function DataSourceModal({ open, onClose }) {
             <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
               flex: 1, padding: '14px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
               fontSize: 11, fontWeight: 550, cursor: 'pointer', border: 'none', fontFamily: 'var(--font)',
-              color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-3)',
+              color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-2)',
               background: activeTab === tab.id ? 'var(--accent-surface)' : 'transparent',
               borderBottom: `2px solid ${activeTab === tab.id ? 'var(--accent)' : 'transparent'}`,
               transition: 'all .15s',

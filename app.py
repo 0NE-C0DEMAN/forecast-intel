@@ -141,7 +141,7 @@ const { useState, useRef, useEffect } = React;
 
 function LockIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="11" width="18" height="11" rx="2"></rect>
       <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
     </svg>
@@ -334,9 +334,9 @@ function LoginScreen({ initialError }) {
             marginTop: 18, width: '100%',
             padding: '12px 16px', borderRadius: 10,
             background: disabled
-              ? 'linear-gradient(135deg, #A5B4FC, #C7D2FE)'
+              ? '#E5E7EB'
               : 'linear-gradient(135deg, var(--accent), var(--accent-2))',
-            color: '#fff', border: 'none',
+            color: disabled ? '#9CA3AF' : '#fff', border: 'none',
             cursor: disabled ? 'not-allowed' : 'pointer',
             fontWeight: 700, fontSize: 14,
             fontFamily: "'Outfit', system-ui, sans-serif",
@@ -1023,7 +1023,7 @@ def _supabase_source_label(run_meta: dict | None) -> str:
 # Supabase hook + mappers used by everything else; `app` is the entry
 # component and must be last.
 _COMPONENT_FILES = [
-    "sidebar", "charts", "explorer", "insights", "upload", "datasource",
+    "sidebar", "charts", "explorer", "insights", "upload", "datasource", "actionflow",
 ]
 _TOP_LEVEL_JSX = ["tweaks-panel", "data", "app"]
 
@@ -1184,6 +1184,7 @@ window.__switchYear = function(year) {
         ("components/explorer.jsx", "explorer"),
         ("components/upload.jsx", "upload"),
         ("components/insights.jsx", "insights"),
+        ("components/actionflow.jsx", "actionflow"),
         ("app.jsx", "app"),
     ]
     for src_path, key in refs:

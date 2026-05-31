@@ -31,9 +31,10 @@
   html, body { height: 100%; background: var(--sidebar-bg); color: var(--text); font-family: var(--font); }
   body { display: flex; overflow: hidden; }
   #root { display: flex; height: 100%; width: 100%; }
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb { background: #C4C9D2; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
   ::selection { background: var(--accent-surface); color: var(--accent); }
 
   /* Dedicated "scroller" for charts/timelines that may overflow horizontally
@@ -127,6 +128,7 @@
 <script type="text/babel" src="components/explorer.jsx"></script>
 <script type="text/babel" src="components/upload.jsx"></script>
 <script type="text/babel" src="components/insights.jsx"></script>
+<script type="text/babel" src="components/actionflow.jsx"></script>
 <script type="text/babel" src="app.jsx"></script>
 </head>
 <body>

@@ -223,11 +223,11 @@ function RiskColumn({ title, subtitle, items, color, icon, emptyMsg }) {
           <div key={item.itemCode + i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: i < items.length - 1 ? '1px solid #F3F4F6' : 'none' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 11, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.description}>{item.description}</div>
-              <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 1 }}>{item.reason}</div>
+              <div style={{ fontSize: 10, color: 'var(--text-2)', marginTop: 1 }}>{item.reason}</div>
             </div>
             {item.severity === 'critical'
-              ? <span style={{ padding: '2px 6px', borderRadius: 5, fontSize: 9, fontWeight: 700, background: '#DC2626', color: '#fff', flexShrink: 0 }}>CRITICAL</span>
-              : <span style={{ padding: '2px 6px', borderRadius: 5, fontSize: 9, fontWeight: 600, background: color + '15', color, flexShrink: 0 }}>WATCH</span>
+              ? <span style={{ padding: '2px 6px', borderRadius: 5, fontSize: 9.5, fontWeight: 700, background: '#DC2626', color: '#fff', flexShrink: 0 }}>CRITICAL</span>
+              : <span style={{ padding: '2px 7px', borderRadius: 5, fontSize: 9.5, fontWeight: 700, background: color + '22', color, flexShrink: 0 }}>WATCH</span>
             }
           </div>
         ))}
@@ -357,13 +357,16 @@ function ActionCalendarHeatmap({ data }) {
                       style={{ width: colW, height: rowH, padding: 1, cursor: cell ? 'pointer' : 'default', borderLeft: isYearStart ? '2px solid var(--accent)' : 'none' }}>
                       <div style={{
                         height: '100%', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        background: col ? col : '#F3F4F6',
-                        opacity: col ? (isHov ? 1 : 0.78) : 0.35,
+                        background: col ? col : '#fff',
+                        opacity: col ? (isHov ? 1 : 0.92) : 1,
+                        border: col ? 'none' : '1px solid #E5E7EB',
                         transition: 'opacity .1s',
                         boxShadow: isHov ? `0 0 0 2px ${col}` : 'none',
                       }}>
-                        {colW >= 36 && col && (
-                          <span style={{ fontSize: 9, fontWeight: 800, color: '#fff', letterSpacing: '.02em', userSelect: 'none' }}>
+                        {col && (
+                          /* Always render the D/R/N letter (scale font down on
+                             narrow cells) so the grid isn't color-only. */
+                          <span style={{ fontSize: colW >= 36 ? 9 : 8, fontWeight: 800, color: '#fff', letterSpacing: '.02em', userSelect: 'none' }}>
                             {action === 'Deliver' ? 'D' : action === 'Return' ? 'R' : 'N'}
                           </span>
                         )}
@@ -420,79 +423,135 @@ function YearOverYearComparison({ allData }) {
   if (years.length < 2) return <div style={{ fontSize: 12, color: 'var(--text-3)', padding: 24, textAlign: 'center' }}>Year-over-year requires data spanning ≥2 calendar years.</div>;
 
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  // Per year: array of 12 monthly net qty (deliver - return)
-  const series = years.map(y => {
-    return {
-      year: y,
-      months: months.map((_, mIdx) => {
-        const period = `${y}-${String(mIdx + 1).padStart(2, '0')}`;
-        const rows = allData.filter(d => d.period === period);
-        const del = rows.filter(d => d.predictedAction === 'Deliver').reduce((s, d) => s + (d.quantity || 0), 0);
-        const ret = rows.filter(d => d.predictedAction === 'Return').reduce((s, d) => s + (d.quantity || 0), 0);
-        return { deliver: del, return: ret, net: del - ret, total: del + ret, hasData: rows.length > 0 };
-      })
-    };
-  });
 
-  const allValues = series.flatMap(s => s.months.map(m => Math.abs(m.net)));
+  // Metrics worth comparing the same month across years. All are monthly
+  // movement aggregates (closing-balance style metrics don't layer cleanly),
+  // so the y-axis stays a clean units scale. "Net movement" is the magnitude
+  // |Deliver − Return| in the chart; the table keeps the signed net.
+  const METRICS = [
+    { key: 'net',     label: 'Net movement',   desc: '|Deliver − Return| units', value: m => Math.abs(m.net), tableSigned: true,  tableValue: m => m.net,     color: 'var(--accent)' },
+    { key: 'deliver', label: 'Deliver',        desc: 'units delivered',          value: m => m.deliver,      tableSigned: false, tableValue: m => m.deliver, color: '#059669' },
+    { key: 'return',  label: 'Return',         desc: 'units returned',           value: m => m.return,       tableSigned: false, tableValue: m => m.return,  color: '#DC2626' },
+    { key: 'total',   label: 'Total movement', desc: 'Deliver + Return units',   value: m => m.total,        tableSigned: false, tableValue: m => m.total,   color: '#7C3AED' },
+  ];
+  const [metricKey, setMetricKey] = React.useState('net');
+  const [showInfo, setShowInfo] = React.useState(false);
+  const [hoverM, setHoverM] = React.useState(null);
+  const metric = METRICS.find(x => x.key === metricKey) || METRICS[0];
+
+  const series = years.map(y => ({
+    year: y,
+    months: months.map((_, mIdx) => {
+      const period = `${y}-${String(mIdx + 1).padStart(2, '0')}`;
+      const rows = allData.filter(d => d.period === period);
+      const del = rows.filter(d => d.predictedAction === 'Deliver').reduce((s, d) => s + (d.quantity || 0), 0);
+      const ret = rows.filter(d => d.predictedAction === 'Return').reduce((s, d) => s + (d.quantity || 0), 0);
+      return { deliver: del, return: ret, net: del - ret, total: del + ret, hasData: rows.length > 0 };
+    })
+  }));
+
+  const valOf = m => metric.value(m);
+  const allValues = series.flatMap(s => s.months.filter(m => m.hasData).map(valOf));
   const max = Math.max(...allValues, 1);
-  const fmtK = v => v >= 1e3 ? (v / 1e3).toFixed(1) + 'K' : Math.round(v);
+  const fmtK = v => { const a = Math.abs(v), sg = v < 0 ? '-' : ''; return a >= 1e6 ? sg + (a / 1e6).toFixed(1) + 'M' : a >= 1e3 ? sg + (a / 1e3).toFixed(1) + 'K' : sg + Math.round(a); };
+
+  // Distinct hue per calendar year (no more opacity fading).
+  const YEAR_PALETTE = ['#4F46E5', '#059669', '#DC2626', '#D97706', '#0891B2', '#DB2777', '#7C3AED', '#0D9488'];
+  const yearColor = idx => YEAR_PALETTE[idx % YEAR_PALETTE.length];
 
   const w = 880, h = 240, padL = 50, padR = 16, padT = 16, padB = 30;
   const cW = w - padL - padR, cH = h - padT - padB;
-  const x = (i) => padL + ((i + 0.5) / 12) * cW;
-  const y = (v) => padT + cH - (v / max) * cH;
+  const x = i => padL + ((i + 0.5) / 12) * cW;
+  const y = v => padT + cH - (v / max) * cH;
 
-  // Color per year, latest year accented
-  const yearColor = (idx) => {
-    const opacities = [0.3, 0.55, 1];
-    const opacity = opacities[Math.max(0, opacities.length - series.length + idx)] || 1;
-    return { stroke: 'var(--accent)', opacity };
-  };
+  const segBtn = (on, c) => ({ padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, fontFamily: 'var(--font)', background: on ? (c || 'var(--accent)') : 'transparent', color: on ? '#fff' : 'var(--text-2)', transition: 'background .12s, color .12s' });
+  const thYoY = align => ({ padding: align === 'center' ? '8px 4px' : '8px 10px', textAlign: align, fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 600 });
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 14, marginBottom: 8, fontSize: 11 }}>
-        {series.map((s, i) => { const c = yearColor(i); return <span key={s.year} style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600, color: 'var(--text-2)' }}><span style={{ width: 14, height: 3, background: c.stroke, opacity: c.opacity }}></span>{s.year}</span>; })}
+      {/* Metric selector + info toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Metric</span>
+        <div style={{ display: 'inline-flex', background: 'var(--surface-2)', borderRadius: 9, padding: 3, gap: 3 }}>
+          {METRICS.map(mt => <button key={mt.key} onClick={() => setMetricKey(mt.key)} style={segBtn(mt.key === metricKey, mt.color)}>{mt.label}</button>)}
+        </div>
+        <button onClick={() => setShowInfo(s => !s)} title="What is this chart?" style={{ marginLeft: 'auto', width: 26, height: 26, borderRadius: 6, border: '1px solid var(--border)', background: showInfo ? 'var(--accent-surface)' : '#fff', color: showInfo ? 'var(--accent)' : 'var(--text-2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><line x1="12" y1="11.5" x2="12" y2="16.5" /><circle cx="12" cy="7.6" r="0.7" fill="currentColor" stroke="none" /></svg>
+        </button>
       </div>
-      <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ overflow: 'visible' }}>
-        {[0,.25,.5,.75,1].map((p,i) => { const yy = padT + cH - cH * p; return <g key={i}><line x1={padL} y1={yy} x2={w-padR} y2={yy} stroke="#F3F4F6" /><text x={padL-6} y={yy+3.5} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{fmtK(max*p)}</text></g>; })}
+
+      {showInfo && (
+        <div style={{ background: 'var(--accent-surface)', border: '1px solid var(--accent-border)', borderRadius: 8, padding: '10px 12px', fontSize: 11.5, color: 'var(--text-2)', lineHeight: 1.55, marginBottom: 12 }}>
+          <b style={{ color: 'var(--accent)' }}>How to read this chart.</b> Each coloured line is one calendar year, drawn across the months Jan–Dec. Because every year shares the same x-axis, you can line up the same month across years and instantly see whether this year is running ahead of or behind the years before it — useful for spotting seasonality and growth. The y-axis is whichever metric you pick above — currently <b>{metric.label}</b> ({metric.desc}). Hover over any month to read every year's value side by side. The table underneath lists the exact monthly figures and a per-year total for the selected metric.
+        </div>
+      )}
+
+      {/* Year legend (distinct colour per year) */}
+      <div style={{ display: 'flex', gap: 14, marginBottom: 8, fontSize: 11, flexWrap: 'wrap' }}>
+        {series.map((s, i) => <span key={s.year} style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600, color: 'var(--text-2)' }}><span style={{ width: 14, height: 3, borderRadius: 2, background: yearColor(i) }}></span>{s.year}</span>)}
+      </div>
+
+      <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ overflow: 'visible' }} onMouseLeave={() => setHoverM(null)}>
+        {[0, .25, .5, .75, 1].map((p, i) => { const yy = padT + cH - cH * p; return <g key={i}><line x1={padL} y1={yy} x2={w - padR} y2={yy} stroke="#F3F4F6" /><text x={padL - 6} y={yy + 3.5} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{fmtK(max * p)}</text></g>; })}
+        {hoverM != null && <line x1={x(hoverM)} y1={padT} x2={x(hoverM)} y2={padT + cH} stroke="var(--text-3)" strokeWidth="1" strokeDasharray="3 3" opacity=".5" />}
         {series.map((s, sIdx) => {
           const c = yearColor(sIdx);
-          const path = s.months.map((m, i) => m.hasData ? `${i === 0 || !s.months[i-1].hasData ? 'M' : 'L'} ${x(i)} ${y(Math.abs(m.net))}` : '').filter(Boolean).join(' ');
+          const path = s.months.map((m, i) => m.hasData ? `${i === 0 || !s.months[i - 1].hasData ? 'M' : 'L'} ${x(i)} ${y(valOf(m))}` : '').filter(Boolean).join(' ');
           return <g key={s.year}>
-            <path d={path} fill="none" stroke={c.stroke} strokeWidth={2} opacity={c.opacity} strokeLinejoin="round" />
-            {s.months.map((m, i) => m.hasData && <circle key={i} cx={x(i)} cy={y(Math.abs(m.net))} r={3} fill={c.stroke} opacity={c.opacity} />)}
+            <path d={path} fill="none" stroke={c} strokeWidth={2} strokeLinejoin="round" />
+            {s.months.map((m, i) => m.hasData && <circle key={i} cx={x(i)} cy={y(valOf(m))} r={hoverM === i ? 4.5 : 3} fill={c} stroke="#fff" strokeWidth={hoverM === i ? 1.5 : 0} />)}
           </g>;
         })}
-        {months.map((m, i) => <text key={m} x={x(i)} y={padT+cH+16} textAnchor="middle" fontSize="10" fill="var(--text-3)" fontFamily="var(--mono)">{m}</text>)}
+        {months.map((m, i) => <text key={m} x={x(i)} y={padT + cH + 16} textAnchor="middle" fontSize="10" fill={hoverM === i ? 'var(--text)' : 'var(--text-3)'} fontWeight={hoverM === i ? 700 : 400} fontFamily="var(--mono)">{m}</text>)}
+        {months.map((m, i) => <rect key={'h' + i} x={padL + (i / 12) * cW} y={padT} width={cW / 12} height={cH} fill="transparent" style={{ cursor: 'crosshair' }} onMouseEnter={() => setHoverM(i)} />)}
+        {hoverM != null && (() => {
+          const rowsForM = series.map((s, sIdx) => ({ year: s.year, color: yearColor(sIdx), m: s.months[hoverM] })).filter(r => r.m.hasData);
+          if (!rowsForM.length) return null;
+          const boxW = 132, lineH = 15, boxH = 22 + rowsForM.length * lineH;
+          let bx = x(hoverM) + 12; if (bx + boxW > w - padR) bx = x(hoverM) - 12 - boxW;
+          const by = padT + 2;
+          return <g style={{ pointerEvents: 'none' }}>
+            <rect x={bx} y={by} width={boxW} height={boxH} rx={7} fill="#fff" stroke="var(--border)" style={{ filter: 'drop-shadow(0 4px 12px rgba(0,0,0,.10))' }} />
+            <text x={bx + 10} y={by + 15} fontSize="10.5" fontWeight="800" fill="var(--text)">{months[hoverM]} · {metric.label}</text>
+            {rowsForM.map((r, ri) => (
+              <g key={r.year} transform={`translate(${bx + 10}, ${by + 21 + ri * lineH})`}>
+                <rect x={0} y={1} width={8} height={8} rx={2} fill={r.color} />
+                <text x={13} y={8} fontSize="10" fill="var(--text-2)">{r.year}</text>
+                <text x={boxW - 20} y={8} textAnchor="end" fontSize="10" fontWeight="700" fontFamily="var(--mono)" fill="var(--text)">{fmtK(valOf(r.m))}</text>
+              </g>
+            ))}
+          </g>;
+        })()}
       </svg>
-      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>Net movement (|Deliver − Return|) by month, layered across years.</div>
+      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>{metric.label} ({metric.desc}) by month, one line per year. Hover a month for values.</div>
 
-      {/* MoM table for current year */}
+      {/* Metric table — header names the metric being shown */}
       <div style={{ marginTop: 18 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>YoY Net Change Table</div>
-        <div style={{ borderRadius: 8, border: '1px solid var(--border)', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>YoY {metric.label} by month</div>
+        <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>Metric: <b style={{ color: 'var(--text-2)' }}>{metric.label}</b> · {metric.desc}{metric.tableSigned ? ' · sign shows direction (+ net delivered out, − net returned)' : ''}.</div>
+        <div style={{ borderRadius: 8, border: '1px solid var(--border)', overflow: 'auto' }} className="h-scroller">
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 640 }}>
             <thead>
               <tr style={{ background: '#FAFBFC' }}>
-                <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 600 }}>Year</th>
-                {months.map(m => <th key={m} style={{ padding: '8px 4px', textAlign: 'center', fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 600 }}>{m}</th>)}
-                <th style={{ padding: '8px 10px', textAlign: 'right', fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 600 }}>Total</th>
+                <th style={thYoY('left')}>Year</th>
+                {months.map(m => <th key={m} style={thYoY('center')}>{m}</th>)}
+                <th style={thYoY('right')}>Total</th>
               </tr>
             </thead>
             <tbody>
-              {series.map(s => {
-                const total = s.months.reduce((sum, m) => sum + m.net, 0);
+              {series.map((s, sIdx) => {
+                const total = s.months.reduce((sum, m) => sum + (m.hasData ? metric.tableValue(m) : 0), 0);
                 return (
                   <tr key={s.year} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: '8px 10px', fontFamily: 'var(--mono)', fontWeight: 700 }}>{s.year}</td>
-                    {s.months.map((m, i) => (
-                      <td key={i} style={{ padding: '8px 4px', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 10, color: !m.hasData ? 'var(--text-3)' : m.net > 0 ? '#059669' : m.net < 0 ? '#DC2626' : 'var(--text-3)', fontWeight: 600 }}>
-                        {!m.hasData ? '—' : (m.net > 0 ? '+' : '') + fmtK(m.net)}
-                      </td>
-                    ))}
-                    <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: total > 0 ? '#059669' : total < 0 ? '#DC2626' : 'var(--text-3)' }}>{total > 0 ? '+' : ''}{fmtK(total)}</td>
+                    <td style={{ padding: '8px 10px', fontFamily: 'var(--mono)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      <span style={{ display: 'inline-block', width: 10, height: 3, borderRadius: 2, background: yearColor(sIdx), marginRight: 6, verticalAlign: 'middle' }}></span>{s.year}
+                    </td>
+                    {s.months.map((m, i) => {
+                      const v = metric.tableValue(m);
+                      const color = !m.hasData ? 'var(--text-3)' : metric.tableSigned ? (v > 0 ? '#059669' : v < 0 ? '#DC2626' : 'var(--text-3)') : 'var(--text-2)';
+                      return <td key={i} style={{ padding: '8px 4px', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 10, color, fontWeight: 600 }}>{!m.hasData ? '—' : (metric.tableSigned && v > 0 ? '+' : '') + fmtK(v)}</td>;
+                    })}
+                    <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: metric.tableSigned ? (total > 0 ? '#059669' : total < 0 ? '#DC2626' : 'var(--text-3)') : metric.color }}>{(metric.tableSigned && total > 0 ? '+' : '') + fmtK(total)}</td>
                   </tr>
                 );
               })}

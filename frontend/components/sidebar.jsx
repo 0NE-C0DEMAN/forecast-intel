@@ -129,6 +129,7 @@ function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDa
   const nav = [
     { id: 'lineitems', label: 'Line Items', icon: 'list' },
     { id: 'predictions', label: 'Predictions', icon: 'chart' },
+    { id: 'actionflow', label: 'Action Flow', icon: 'flow' },
     { id: 'accuracy', label: 'Model Accuracy', icon: 'target' },
     { id: 'forecasts', label: 'Item Forecasts', icon: 'forecasts', badge: null },
     { id: 'explorer', label: 'Item Explorer', icon: 'table', badge: itemCount },
@@ -148,6 +149,7 @@ function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDa
     forecasts: <><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path><path d="M2 20h20"></path></>,
     list: <><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></>,
     target: <><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></>,
+    flow: <><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></>,
   };
 
   const SvgIcon = ({ name, size = 18 }) => (
@@ -169,7 +171,7 @@ function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDa
         onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--hover)'; }}
         onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
       >
-        <span style={{ opacity: active ? 1 : 0.55, display: 'flex' }}><SvgIcon name={item.icon} /></span>
+        <span style={{ opacity: active ? 1 : 0.72, display: 'flex' }}><SvgIcon name={item.icon} /></span>
         {!collapsed && <span>{item.label}</span>}
         {!collapsed && item.badge && <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: 'var(--accent-surface)', color: 'var(--accent)' }}>{item.badge}</span>}
       </button>

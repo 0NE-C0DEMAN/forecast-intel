@@ -15,6 +15,23 @@
 // in app.jsx as well would be a "Identifier already declared" SyntaxError.
 const { useState, useEffect, useMemo } = React;
 
+/* Predicted ⇄ Actual accessors. The Overview tab has a toggle that flips
+   every card between the model's prediction and what actually happened
+   (only meaningful for Backtest months where actuals exist).
+     fcAction — which action column to read
+     fcBal    — which closing-balance column to read
+     fcQty    — move magnitude: predicted uses the stored action_quantity;
+                actual is derived as |actual − previous| closing balance. */
+function fcAction(d, mode) { return mode === 'actual' ? d.actualAction : d.predictedAction; }
+function fcBal(d, mode) { return mode === 'actual' ? d.actualClosingBal : d.predictedClosingBal; }
+function fcQty(d, mode) {
+  if (mode === 'actual') {
+    if (d.actualClosingBal == null || d.prevClosingBal == null) return 0;
+    return Math.abs(d.actualClosingBal - d.prevClosingBal);
+  }
+  return d.quantity || 0;
+}
+
 const ACTION_THRESHOLD = 0.5;
 function classifyAction(delta) {
   if (delta == null) return null;
@@ -444,10 +461,18 @@ function SearchBox({ value, onType, onPick, onClear, options, placeholder, width
         autoComplete="off"
         style={{ width: '100%', padding: '7px 30px 7px 32px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, fontFamily: 'var(--font)', color: 'var(--text)', outline: 'none', background: '#fff', boxSizing: 'border-box' }}
       />
-      <svg style={{ position: 'absolute', left: 11, top: 9, pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      <svg style={{ position: 'absolute', left: 11, top: 9, pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
       {value && (
-        <button onMouseDown={e => { e.preventDefault(); if (onClear) onClear(); else if (onType) onType(''); setOpen(false); setActive(-1); }}
-          style={{ position: 'absolute', right: 8, top: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 15, lineHeight: 1, padding: '2px 3px' }}>×</button>
+        <button aria-label="Clear search" onMouseDown={e => { e.preventDefault(); if (onClear) onClear(); else if (onType) onType(''); setOpen(false); setActive(-1); }}
+          style={{ position: 'absolute', right: 6, top: 5, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-2)', fontSize: 16, lineHeight: 1, padding: '3px 5px', borderRadius: 5, transition: 'background .12s, color .12s' }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--hover)'; e.currentTarget.style.color = 'var(--text)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-2)'; }}>×</button>
+      )}
+      {/* Explicit empty-state so the user knows the search ran and found nothing. */}
+      {open && value && value.trim() && suggestions.length === 0 && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.10)', zIndex: 60, padding: '10px 12px', fontSize: 12, color: 'var(--text-2)' }}>
+          No items match “{value.trim()}”
+        </div>
       )}
       {open && suggestions.length > 0 && (
         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.10)', zIndex: 60, overflow: 'hidden', maxHeight: 320, overflowY: 'auto' }}>
@@ -477,6 +502,6 @@ Object.assign(window, {
   supabaseRowsToRecords, synthMapeSummary, formatYearLabel, formatSourceLabel,
   summariseYears, useSupabaseData,
   readCache, writeCache,
-  classifyAction,
+  classifyAction, fcAction, fcBal, fcQty,
   SearchBox,
 });

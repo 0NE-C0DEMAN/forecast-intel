@@ -22,22 +22,40 @@ function PeriodSelector({ value, onChange, options }) {
     document.addEventListener('mousedown', fn); return () => document.removeEventListener('mousedown', fn);
   }, []);
   const fmt = p => { const [y, m] = p.split('-'); const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[parseInt(m)-1]} ${y}`; };
-  // Always dropdown — matches source design
   const idx = options.indexOf(value);
+  // Stepper arrow button — visible affordance: subtle filled track, darker
+  // glyph, hover feedback, and an unmistakable disabled state.
+  const Arrow = ({ dir, on, onClick }) => (
+    <button onClick={onClick} disabled={!on} aria-label={dir === 'prev' ? 'Previous month' : 'Next month'}
+      style={{
+        width: 30, height: 32, borderRadius: 7, border: '1px solid var(--border)',
+        background: on ? 'var(--surface-2)' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: on ? 'pointer' : 'default', color: on ? 'var(--text)' : 'var(--text-3)',
+        fontSize: 15, lineHeight: 1, opacity: on ? 1 : 0.45, transition: 'background .12s',
+      }}
+      onMouseEnter={e => { if (on) e.currentTarget.style.background = 'var(--hover)'; }}
+      onMouseLeave={e => { if (on) e.currentTarget.style.background = 'var(--surface-2)'; }}
+    >{dir === 'prev' ? '‹' : '›'}</button>
+  );
   return (
     <div ref={ref} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-      <button onClick={() => idx > 0 && onChange(options[idx - 1])} disabled={idx <= 0} style={{ width: 28, height: 30, borderRadius: 6, border: '1px solid var(--border)', background: '#fff', cursor: idx > 0 ? 'pointer' : 'default', color: idx > 0 ? 'var(--text-2)' : 'var(--text-3)', fontSize: 13 }}>‹</button>
+      <Arrow dir="prev" on={idx > 0} onClick={() => idx > 0 && onChange(options[idx - 1])} />
       <div style={{ position: 'relative' }}>
-        <button onClick={() => setOpen(!open)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--text)', minWidth: 140, justifyContent: 'space-between', fontFamily: 'var(--font)' }}>
-          <span>{fmt(value)}</span><span style={{ fontSize: 10, color: 'var(--text-3)' }}>▼</span>
+        <button onClick={() => setOpen(!open)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--text)', minWidth: 140, justifyContent: 'space-between', fontFamily: 'var(--font)' }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
+          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}>
+          <span>{fmt(value)}</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform .15s', transform: open ? 'rotate(180deg)' : 'none', flexShrink: 0 }}><polyline points="6 9 12 15 18 9"></polyline></svg>
         </button>
         {open && <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.08)', maxHeight: 280, overflow: 'auto', zIndex: 100, minWidth: 160 }}>
           {options.map(p => (
-            <button key={p} onClick={() => { onChange(p); setOpen(false); }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', border: 'none', background: value === p ? 'var(--accent-surface)' : 'transparent', color: value === p ? 'var(--accent)' : 'var(--text-2)', cursor: 'pointer', fontSize: 12, fontWeight: value === p ? 700 : 500, fontFamily: 'var(--font)' }}>{fmt(p)}</button>
+            <button key={p} onClick={() => { onChange(p); setOpen(false); }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', border: 'none', background: value === p ? 'var(--accent-surface)' : 'transparent', color: value === p ? 'var(--accent)' : 'var(--text-2)', cursor: 'pointer', fontSize: 12, fontWeight: value === p ? 700 : 500, fontFamily: 'var(--font)' }}
+              onMouseEnter={e => { if (value !== p) e.currentTarget.style.background = 'var(--hover)'; }}
+              onMouseLeave={e => { if (value !== p) e.currentTarget.style.background = 'transparent'; }}>{fmt(p)}</button>
           ))}
         </div>}
       </div>
-      <button onClick={() => idx < options.length - 1 && onChange(options[idx + 1])} disabled={idx >= options.length - 1} style={{ width: 28, height: 30, borderRadius: 6, border: '1px solid var(--border)', background: '#fff', cursor: idx < options.length - 1 ? 'pointer' : 'default', color: idx < options.length - 1 ? 'var(--text-2)' : 'var(--text-3)', fontSize: 13 }}>›</button>
+      <Arrow dir="next" on={idx < options.length - 1} onClick={() => idx < options.length - 1 && onChange(options[idx + 1])} />
     </div>
   );
 }
@@ -99,6 +117,19 @@ function App() {
     return { deliver: deliver.length, return: ret.length, noChange: nc.length, total: d.length, deliverQty, returnQty, prevTotal, predTotal, hvCount, hasActuals };
   }, [periodData]);
 
+  // Predicted ⇄ Actual view mode for the Predictions page. Lives here (not in
+  // PredictionsPage) so the toggle can sit in the top header next to the month
+  // picker. Only meaningful when the active month has actuals (Backtest).
+  const [predMode, setPredMode] = useState('predicted');
+  const predViewMode = stats.hasActuals ? predMode : 'predicted';
+  // Item Explorer spans all periods, so its Predicted/Actual toggle keys off
+  // whether ANY period has actuals — not just the active month.
+  const anyActuals = useMemo(() => (data || []).some(d => d.actualClosingBal != null), [data]);
+  const explorerMode = anyActuals ? predMode : 'predicted';
+  // Error metric for the Model Accuracy page (MAPE vs APE). Lifted here so the
+  // toggle can live in the top header, mirroring the Predicted/Actual control.
+  const [errorMetric, setErrorMetric] = useState('mape');
+
   if (!hydrated) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', width: '100vw', color: 'var(--text-3)', fontSize: 14, gap: 10 }}>
       <div style={{ width: 20, height: 20, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin .6s linear infinite' }}></div>
@@ -109,6 +140,7 @@ function App() {
 
   const pageTitle = page === 'lineitems' ? 'Line Items'
     : page === 'predictions' ? 'Monthly Predictions'
+    : page === 'actionflow' ? 'Action Flow'
     : page === 'accuracy' ? 'Model Accuracy'
     : page === 'explorer' ? 'Item Explorer'
     : page === 'forecasts' ? 'Item Forecasts'
@@ -134,19 +166,84 @@ function App() {
               <span style={{ fontSize: 10, color: '#059669', background: 'rgba(5,150,105,.08)', padding: '2px 7px', borderRadius: 5, fontWeight: 600, whiteSpace: 'nowrap' }}>Actuals available</span>
             )}
             {!stats.hasActuals && page === 'predictions' && (
-              <span style={{ fontSize: 10, color: 'var(--text-3)', background: '#F3F4F6', padding: '2px 7px', borderRadius: 5, fontWeight: 500, whiteSpace: 'nowrap' }}>Future mode</span>
+              <span style={{ fontSize: 10, color: 'var(--text-2)', background: '#EEF0F4', padding: '2px 7px', borderRadius: 5, fontWeight: 600, whiteSpace: 'nowrap' }}>Future mode</span>
             )}
           </div>
           {page === 'predictions' && allPeriods.length > 0 && (
-            <PeriodSelector value={activePeriod} onChange={setPeriod} options={allPeriods} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {/* Predicted / Actual toggle — sits just left of the month picker.
+                  Only shown for months that have actuals to compare against. */}
+              {stats.hasActuals && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Showing</span>
+                  <div style={{ display: 'inline-flex', background: '#fff', border: '1px solid var(--border)', borderRadius: 9, padding: 3, gap: 3 }}>
+                    {[['predicted', 'Predicted', 'var(--accent)'], ['actual', 'Actual', '#F59E0B']].map(([m, lbl, col]) => {
+                      const on = predMode === m;
+                      return (
+                        <button key={m} onClick={() => setPredMode(m)} style={{
+                          padding: '5px 14px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                          fontSize: 12, fontWeight: 700, fontFamily: 'var(--font)',
+                          background: on ? col : 'transparent',
+                          color: on ? '#fff' : 'var(--text-2)',
+                          boxShadow: on ? `0 2px 6px ${col}55` : 'none',
+                          transition: 'background .12s, color .12s',
+                        }}>{lbl}</button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <PeriodSelector value={activePeriod} onChange={setPeriod} options={allPeriods} />
+            </div>
+          )}
+          {page === 'accuracy' && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Error metric</span>
+              <div style={{ display: 'inline-flex', background: '#fff', border: '1px solid var(--border)', borderRadius: 9, padding: 3, gap: 3 }}>
+                {[['mape', 'MAPE'], ['ape', 'APE']].map(([m, lbl]) => {
+                  const on = errorMetric === m;
+                  return (
+                    <button key={m} onClick={() => setErrorMetric(m)} style={{
+                      padding: '5px 16px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                      fontSize: 12, fontWeight: 700, fontFamily: 'var(--font)',
+                      background: on ? 'var(--accent)' : 'transparent',
+                      color: on ? '#fff' : 'var(--text-2)',
+                      boxShadow: on ? '0 2px 6px rgba(79,70,229,.33)' : 'none',
+                      transition: 'background .12s, color .12s',
+                    }}>{lbl}</button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {page === 'explorer' && anyActuals && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Showing</span>
+              <div style={{ display: 'inline-flex', background: '#fff', border: '1px solid var(--border)', borderRadius: 9, padding: 3, gap: 3 }}>
+                {[['predicted', 'Predicted', 'var(--accent)'], ['actual', 'Actual', '#F59E0B']].map(([m, lbl, col]) => {
+                  const on = predMode === m;
+                  return (
+                    <button key={m} onClick={() => setPredMode(m)} style={{
+                      padding: '5px 14px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                      fontSize: 12, fontWeight: 700, fontFamily: 'var(--font)',
+                      background: on ? col : 'transparent',
+                      color: on ? '#fff' : 'var(--text-2)',
+                      boxShadow: on ? `0 2px 6px ${col}55` : 'none',
+                      transition: 'background .12s, color .12s',
+                    }}>{lbl}</button>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </header>
 
         <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {page === 'lineitems' && <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '14px 20px 0' }}><ItemsTableTab data={data || []} allPeriods={allPeriods} standalone /></div>}
-          {page === 'predictions' && <PredictionsPage data={periodData} allData={data} stats={stats} periodGroups={periodGroups} period={activePeriod} />}
-          {page === 'accuracy' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: '14px 20px 20px' }}><AccuracyTab periodGroups={periodGroups} allData={data} /></div>}
-          {page === 'explorer' && <ItemExplorerPage allData={data} period={activePeriod} />}
+          {page === 'predictions' && <PredictionsPage data={periodData} allData={data} stats={stats} periodGroups={periodGroups} period={activePeriod} mode={predViewMode} />}
+          {page === 'actionflow' && <ActionFlowPage allData={data} />}
+          {page === 'accuracy' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: '14px 20px 20px' }}><AccuracyTab periodGroups={periodGroups} allData={data} metric={errorMetric} /></div>}
+          {page === 'explorer' && <ItemExplorerPage allData={data} period={activePeriod} mode={explorerMode} />}
           {page === 'forecasts' && <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '14px 20px 0' }}><ItemForecastsGrid allData={data || []} /></div>}
           {page === 'upload' && <div style={{ padding: 24, overflow: 'auto' }}><UploadDataPage onOpenDataSource={() => setDsOpen(true)} /></div>}
         </main>
@@ -158,10 +255,32 @@ function App() {
 }
 
 /* ===== MONTHLY PREDICTIONS PAGE — tabbed dashboard ===== */
-function PredictionsPage({ data, allData, stats, periodGroups, period }) {
+function PredictionsPage({ data, allData, stats, periodGroups, period, mode = 'predicted' }) {
   const [tab, setTab] = useState('overview');
   const fmtK = v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? Math.round(v).toLocaleString() : Math.round(v).toString();
-  const pctChange = stats.prevTotal > 0 ? (((stats.predTotal - stats.prevTotal) / stats.prevTotal) * 100).toFixed(1) : '0';
+
+  // Predicted ⇄ Actual is driven by the toggle in the top header (App).
+  const viewMode = mode;
+  const isActual = viewMode === 'actual';
+
+  // KPI stats recomputed for the active view mode (predicted vs actual).
+  const viewStats = useMemo(() => {
+    const d = data || [];
+    const deliver = d.filter(x => fcAction(x, viewMode) === 'Deliver');
+    const ret     = d.filter(x => fcAction(x, viewMode) === 'Return');
+    const deliverQty = deliver.reduce((s, x) => s + fcQty(x, viewMode), 0);
+    const returnQty  = ret.reduce((s, x) => s + fcQty(x, viewMode), 0);
+    const prevTotal = d.reduce((s, x) => s + (x.prevClosingBal || 0), 0);
+    const curTotal  = d.reduce((s, x) => s + (fcBal(x, viewMode) || 0), 0);
+    return { deliver: deliver.length, return: ret.length, deliverQty, returnQty, prevTotal, curTotal,
+             total: d.length, hvCount: d.filter(x => x.isHV).length };
+  }, [data, viewMode]);
+
+  const pctChange = viewStats.prevTotal > 0 ? (((viewStats.curTotal - viewStats.prevTotal) / viewStats.prevTotal) * 100).toFixed(1) : '0';
+  // Mode tag (· predicted / · actual) only when the month has actuals — i.e.
+  // when the toggle is actually present so the suffix disambiguates. On
+  // Future months there's nothing to switch between, so no tag.
+  const modeTag = stats.hasActuals ? (isActual ? ' · actual' : ' · predicted') : '';
 
   const tabs = [
     { id: 'overview', label: 'Overview' },
@@ -172,13 +291,13 @@ function PredictionsPage({ data, allData, stats, periodGroups, period }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* Sticky KPI strip */}
+      {/* Sticky KPI strip — Predicted/Actual is driven by the header toggle. */}
       <div style={{ padding: '14px 24px 0', flexShrink: 0 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-          <KPI color="var(--accent)" label="Items" value={stats.total} sub={`${stats.hvCount} high-value`} />
-          <KPI color="var(--accent)" label="Net Closing Bal" value={fmtK(stats.predTotal)} sub={`${pctChange >= 0 ? '+' : ''}${pctChange}% vs prev`} subColor={pctChange >= 0 ? '#059669' : '#DC2626'} />
-          <KPI color="#059669" label="Deliver Volume" value={fmtK(stats.deliverQty)} sub={`${stats.deliver} items`} subColor="#059669" />
-          <KPI color="#DC2626" label="Return Volume" value={fmtK(stats.returnQty)} sub={`${stats.return} items`} subColor="#DC2626" />
+          <KPI color="var(--accent)" label="Items" value={viewStats.total} sub={`${viewStats.hvCount} high-value`} />
+          <KPI color={isActual ? '#F59E0B' : 'var(--accent)'} label={'Net Closing Bal' + modeTag} value={fmtK(viewStats.curTotal)} sub={`${pctChange >= 0 ? '+' : ''}${pctChange}% vs prev`} subColor={pctChange >= 0 ? '#059669' : '#DC2626'} />
+          <KPI color="#059669" label={'Deliver Volume' + modeTag} value={fmtK(viewStats.deliverQty)} sub={`${viewStats.deliver} items`} subColor="#059669" />
+          <KPI color="#DC2626" label={'Return Volume' + modeTag} value={fmtK(viewStats.returnQty)} sub={`${viewStats.return} items`} subColor="#DC2626" />
         </div>
       </div>
 
@@ -188,27 +307,33 @@ function PredictionsPage({ data, allData, stats, periodGroups, period }) {
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{
               padding: '8px 16px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'var(--font)',
-              background: 'transparent', color: tab === t.id ? 'var(--accent)' : 'var(--text-3)',
+              background: 'transparent', color: tab === t.id ? 'var(--accent)' : 'var(--text-2)',
               borderBottom: '2px solid', borderColor: tab === t.id ? 'var(--accent)' : 'transparent',
               marginBottom: -1, transition: 'all .15s',
-            }}>{t.label}</button>
+            }}
+              onMouseEnter={e => { if (tab !== t.id) e.currentTarget.style.color = 'var(--text)'; }}
+              onMouseLeave={e => { if (tab !== t.id) e.currentTarget.style.color = 'var(--text-2)'; }}>{t.label}</button>
           ))}
         </div>
       </div>
 
       {/* Tab content */}
       <div style={{ flex: 1, overflow: 'hidden', padding: 16, display: 'flex', flexDirection: 'column' }}>
-        {tab === 'overview' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><OverviewTab data={data} stats={stats} periodGroups={periodGroups} period={period} /></div>}
-        {tab === 'movement' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><MovementTab data={data} periodGroups={periodGroups} /></div>}
-        {tab === 'distribution' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><DistributionTab data={data} allData={allData} /></div>}
+        {tab === 'overview' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><OverviewTab data={data} stats={stats} periodGroups={periodGroups} period={period} mode={viewMode} /></div>}
+        {tab === 'movement' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><MovementTab data={data} periodGroups={periodGroups} mode={viewMode} hasActuals={stats.hasActuals} /></div>}
+        {tab === 'distribution' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><DistributionTab data={data} allData={allData} mode={viewMode} /></div>}
         {tab === 'insights' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}><InsightsTab data={data} allData={allData} periodGroups={periodGroups} period={period} /></div>}
       </div>
     </div>
   );
 }
 
-function OverviewTab({ data, stats, periodGroups, period }) {
+function OverviewTab({ data, stats, periodGroups, period, mode = 'predicted' }) {
   const mapeData = window.__MAPE_SUMMARY || [];
+  // Mode tag for card titles — only when the month has actuals (so the toggle
+  // is present and the suffix actually disambiguates predicted vs actual).
+  const hasActuals = (data || []).some(d => d.actualClosingBal != null);
+  const modeTag = hasActuals ? (mode === 'actual' ? ' · actual' : ' · predicted') : '';
   // Direction accuracy from actual data rows
   const rowsWithActual = (data || []).filter(d => d.directionCorrect != null);
   const dirAcc = rowsWithActual.length > 0 ? Math.round(rowsWithActual.filter(d => d.directionCorrect).length / rowsWithActual.length * 100) : null;
@@ -231,23 +356,25 @@ function OverviewTab({ data, stats, periodGroups, period }) {
           : t === 'Moderate'
           ? { label: 'Moderate error', icon: '~', bg: 'rgba(217,119,6,.07)', color: '#B45309', line: '#D97706' }
           : { label: 'High error', icon: '⚠', bg: 'rgba(220,38,38,.07)', color: '#DC2626', line: '#DC2626' };
-        const errColor = v => v == null ? 'var(--text-3)' : v > 100 ? '#DC2626' : v > 50 ? '#D97706' : '#059669';
+        // Use the darker amber (#B45309) in the 50–100% band so the bold value
+        // label passes contrast (the lighter #D97706 only colours the bar fill).
+        const errColor = v => v == null ? 'var(--text-2)' : v > 100 ? '#DC2626' : v > 50 ? '#B45309' : '#059669';
         const ErrBar = ({ v }) => {
           if (v == null) return null;
           const pct = Math.min(v / 200, 1) * 100;
           const col = v > 100 ? '#DC2626' : v > 50 ? '#D97706' : '#059669';
           return (
             <div style={{ position: 'relative', marginTop: 5 }}>
-              <div style={{ width: '100%', height: 4, background: '#F3F4F6', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${pct}%`, background: col, opacity: .7, borderRadius: 2 }} />
+              <div style={{ width: '100%', height: 6, background: '#EAECEF', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${pct}%`, background: col, opacity: .85, borderRadius: 3 }} />
               </div>
-              {/* Threshold ticks */}
-              <div style={{ position: 'absolute', left: '25%', top: 0, width: 1, height: 4, background: '#D1D5DB' }} />
-              <div style={{ position: 'absolute', left: '50%', top: 0, width: 1, height: 4, background: '#D1D5DB' }} />
+              {/* Threshold ticks at 100% and 200% of the 0–200 scale */}
+              <div style={{ position: 'absolute', left: '25%', top: 0, width: 1, height: 6, background: 'var(--text-3)' }} />
+              <div style={{ position: 'absolute', left: '50%', top: 0, width: 1, height: 6, background: 'var(--text-3)' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-                <span style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>0</span>
-                <span style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>100%</span>
-                <span style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>200%</span>
+                <span style={{ fontSize: 9.5, color: 'var(--text-2)', fontFamily: 'var(--mono)' }}>0</span>
+                <span style={{ fontSize: 9.5, color: 'var(--text-2)', fontFamily: 'var(--mono)' }}>100%</span>
+                <span style={{ fontSize: 9.5, color: 'var(--text-2)', fontFamily: 'var(--mono)' }}>200%</span>
               </div>
             </div>
           );
@@ -260,7 +387,7 @@ function OverviewTab({ data, stats, periodGroups, period }) {
             {/* Strip header */}
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-2)' }}>Forecast Accuracy · {fmtPeriodLabel(period)}</span>
-              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-2)' }}>
                 · MAPE = avg % error between predicted and actual closing balance.
                 &nbsp;<b style={{ color: '#059669' }}>&lt;30% excellent</b>,
                 &nbsp;<b style={{ color: '#D97706' }}>30–100% acceptable</b>,
@@ -280,33 +407,41 @@ function OverviewTab({ data, stats, periodGroups, period }) {
                     {/* Period block */}
                     <div style={{ flexShrink: 0, minWidth: 120 }}>
                       <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', lineHeight: 1.1 }}>{fmtPeriodLabel(r.period)}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 3 }}>{r.itemsPredicted ? r.itemsPredicted + ' items forecast' : 'Monthly forecast'}</div>
+                      <div style={{ fontSize: 10.5, color: 'var(--text-2)', marginTop: 3 }}>{r.itemsPredicted ? r.itemsPredicted + ' items forecast' : 'Monthly forecast'}</div>
                     </div>
 
                     {/* Direction accuracy */}
-                    <div style={{ flexShrink: 0, paddingLeft: 18, borderLeft: '1px solid #F3F4F6' }}>
-                      <div style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Direction</div>
+                    <div style={{ flexShrink: 0, paddingLeft: 18, borderLeft: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Direction</div>
                       <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--mono)', lineHeight: 1.15, color: accColor(dirAcc) }}>
                         {dirAcc != null ? dirAcc + '%' : '—'}
                       </div>
                     </div>
 
                     {/* HV accuracy */}
-                    <div style={{ flexShrink: 0, paddingLeft: 18, borderLeft: '1px solid #F3F4F6' }}>
-                      <div style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>HV Direction</div>
+                    <div style={{ flexShrink: 0, paddingLeft: 18, borderLeft: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.06em' }}>HV Direction</div>
                       <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--mono)', lineHeight: 1.15, color: accColor(hvDirAcc) }}>
                         {hvDirAcc != null ? hvDirAcc + '%' : '—'}
                       </div>
                     </div>
 
-                    {/* MAPE bars — inline, takes remaining space */}
-                    <div style={{ flex: 1, minWidth: 240, paddingLeft: 18, borderLeft: '1px solid #F3F4F6', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                    {/* MAPE bars — inline, takes remaining space. The numeric
+                        MAPE value is printed above each bar so the exact error
+                        is readable, not just inferred from the fill length. */}
+                    <div style={{ flex: 1, minWidth: 240, paddingLeft: 18, borderLeft: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                       <div>
-                        <div style={{ fontSize: 9, color: 'var(--text-3)', marginBottom: 4, fontWeight: 500 }}>Forecast error · All</div>
+                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 6 }}>
+                          <span style={{ fontSize: 10.5, color: 'var(--text-2)', fontWeight: 600 }}>Forecast error · All</span>
+                          <span style={{ fontSize: 14, fontWeight: 800, fontFamily: 'var(--mono)', color: errColor(r.mapeAll), lineHeight: 1 }}>{r.mapeAll != null ? r.mapeAll.toFixed(1) + '%' : '—'}</span>
+                        </div>
                         <ErrBar v={r.mapeAll} />
                       </div>
                       <div>
-                        <div style={{ fontSize: 9, color: 'var(--text-3)', marginBottom: 4, fontWeight: 500 }}>Forecast error · HV</div>
+                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 6 }}>
+                          <span style={{ fontSize: 10.5, color: 'var(--text-2)', fontWeight: 600 }}>Forecast error · HV</span>
+                          <span style={{ fontSize: 14, fontWeight: 800, fontFamily: 'var(--mono)', color: errColor(r.mapeHV), lineHeight: 1 }}>{r.mapeHV != null ? r.mapeHV.toFixed(1) + '%' : '—'}</span>
+                        </div>
                         <ErrBar v={r.mapeHV} />
                       </div>
                     </div>
@@ -324,68 +459,77 @@ function OverviewTab({ data, stats, periodGroups, period }) {
           </div>
         );
       })()}
-      <Card title="Action Mix" style={{ gridColumn: 'span 2' }}><ActionDonut data={data} /></Card>
-      <Card title="HV vs Standard" style={{ gridColumn: 'span 2' }}><HVBreakdown data={data} /></Card>
-      <Card title="Closing Balance" style={{ gridColumn: 'span 2' }}><ClosingBalancePortfolio data={data} /></Card>
-      <Card title="Top 10 Deliver" style={{ gridColumn: 'span 3' }}><TopItemsBar data={data} action="Deliver" maxItems={10} color="#059669" /></Card>
-      <Card title="Top 10 Return" style={{ gridColumn: 'span 3' }}><TopItemsBar data={data} action="Return" maxItems={10} color="#DC2626" /></Card>
+      <Card title={'Action Mix' + modeTag} style={{ gridColumn: 'span 2' }} info={`Every item this month is recommended to Deliver (ship stock out to site), Return (send stock back), or No Change (hold). The donut shows how all items split across those three actions — the centre number is the total item count. Switch the header toggle to Actual to see what actually happened.`}><ActionDonut data={data} mode={mode} /></Card>
+      <Card title={'HV vs Standard' + modeTag} style={{ gridColumn: 'span 2' }} info={`The same Deliver / Return / No-Change split, but separated for High-Value items (your most important SKUs) vs Standard items — so you can see whether the key items behave differently from the rest.`}><HVBreakdown data={data} mode={mode} /></Card>
+      <Card title={'Closing Balance' + modeTag} style={{ gridColumn: 'span 2' }} info={`Total units on site at the end of last month vs the model's predicted total for this month (or the real total in Actual mode). A longer second bar means overall inventory is forecast to grow.`}><ClosingBalancePortfolio data={data} mode={mode} /></Card>
+      <Card title={'Top 10 Deliver' + modeTag} style={{ gridColumn: 'span 3' }} info={`The ten items with the largest predicted delivery quantity this month — where the most stock is forecast to ship out. Bar length = number of units.`}><TopItemsBar data={data} action="Deliver" maxItems={10} color="#059669" mode={mode} /></Card>
+      <Card title={'Top 10 Return' + modeTag} style={{ gridColumn: 'span 3' }} info={`The ten items with the largest predicted return quantity this month — where the most stock is forecast to come back from site.`}><TopItemsBar data={data} action="Return" maxItems={10} color="#DC2626" mode={mode} /></Card>
     </div>
   );
 }
 
-function MovementTab({ data, periodGroups }) {
+function MovementTab({ data, periodGroups, mode = 'predicted', hasActuals = false }) {
   const [pairFrom, setPairFrom] = useState(periodGroups.length >= 2 ? periodGroups[periodGroups.length - 2].period : null);
   const [pairTo, setPairTo] = useState(periodGroups.length >= 2 ? periodGroups[periodGroups.length - 1].period : null);
   const fromData = periodGroups.find(pg => pg.period === pairFrom)?.data || [];
   const toData = periodGroups.find(pg => pg.period === pairTo)?.data || [];
   const many = periodGroups.length > 4;
+  // Mode tag for card titles — only when actuals exist (toggle present).
+  const modeTag = hasActuals ? (mode === 'actual' ? ' · actual' : ' · predicted') : '';
 
   const ac = a => a === 'Deliver' ? '#059669' : a === 'Return' ? '#DC2626' : '#D97706';
   const fmtP = p => { if (!p) return ''; const [y, m] = p.split('-'); const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${names[parseInt(m)-1]} ${y}`; };
 
-  // Period-to-period action shift breakdown
+  // Period-to-period action shift breakdown — uses predicted or actual action
+  // depending on the header toggle.
   const shiftData = useMemo(() => {
     const map = {};
-    fromData.forEach(d => { map[d.itemCode] = d.predictedAction; });
+    fromData.forEach(d => { map[d.itemCode] = fcAction(d, mode); });
     const changeTypes = {}, stableCount = { Deliver: 0, Return: 0, 'No Change': 0 };
     let total = 0;
     toData.forEach(d => {
       const prev = map[d.itemCode];
-      if (!prev) return;
+      const cur = fcAction(d, mode);
+      if (!prev || !cur) return;
       total++;
-      if (prev === d.predictedAction) { stableCount[prev] = (stableCount[prev] || 0) + 1; return; }
-      const key = `${prev}||${d.predictedAction}`;
-      if (!changeTypes[key]) changeTypes[key] = { from: prev, to: d.predictedAction, count: 0 };
+      if (prev === cur) { stableCount[prev] = (stableCount[prev] || 0) + 1; return; }
+      const key = `${prev}||${cur}`;
+      if (!changeTypes[key]) changeTypes[key] = { from: prev, to: cur, count: 0 };
       changeTypes[key].count++;
     });
     const shifts = Object.values(changeTypes).sort((a, b) => b.count - a.count);
     const changedCount = shifts.reduce((s, c) => s + c.count, 0);
     return { shifts, changedCount, stableCount, total };
-  }, [fromData, toData]);
+  }, [fromData, toData, mode]);
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 'min-content', gap: 12 }}>
 
       {/* Row 1: Action counts (left) + HV breakdown (right) */}
-      <Card title={`Action Count by Period · ${periodGroups.length} period${periodGroups.length === 1 ? '' : 's'}`} style={{ gridColumn: 'span 3' }}>
-        <ActionCountBars periodGroups={periodGroups} />
+      <Card title={`Action Count by Period${modeTag} · ${periodGroups.length} period${periodGroups.length === 1 ? '' : 's'}`} style={{ gridColumn: 'span 3' }}
+        info={`For each month, how many items fall into Deliver, Return, and No Change. Read it left-to-right to spot trends — e.g. returns creeping up over the months.`}>
+        <ActionCountBars periodGroups={periodGroups} mode={mode} />
       </Card>
-      <Card title="HV vs Standard · items per action" style={{ gridColumn: 'span 3' }}>
-        <HVMovementByPeriod periodGroups={periodGroups} />
+      <Card title={'HV vs Standard · items per action' + modeTag} style={{ gridColumn: 'span 3' }}
+        info={`Deliver and Return item counts per month, each bar split into High-Value (dark) and Standard (light). The number on top is the total for that bar; the number inside the dark base is the High-Value count — so you can see how much of the movement is driven by your key SKUs.`}>
+        <HVMovementByPeriod periodGroups={periodGroups} mode={mode} />
       </Card>
 
       {/* Row 2: Net qty movement — full width */}
-      <Card title="Net Inventory Movement · quantity units per period" style={{ gridColumn: 'span 6' }}>
-        <NetMovementBars periodGroups={periodGroups} dense={many} />
+      <Card title={'Net Inventory Movement · quantity units per period' + modeTag} style={{ gridColumn: 'span 6' }}
+        info={`Per month: total units delivered (green), total returned (red), and the net change (blue = delivered − returned). Net above the line means stock is flowing out to site overall; below means it is coming back.`}>
+        <NetMovementBars periodGroups={periodGroups} dense={many} mode={mode} />
       </Card>
 
       {/* Row 3: Top movers (left) + Period shift summary (right) */}
-      <Card title="Top Items by Cumulative Movement" style={{ gridColumn: 'span 4' }}>
-        <HighVelocityItems periodGroups={periodGroups} />
+      <Card title={'Top Items by Cumulative Movement' + modeTag} style={{ gridColumn: 'span 4' }}
+        info={`The items that moved the most units across all months combined. Each bar is split into the share that was delivered (green) vs returned (red), so you can see both volume and direction at a glance.`}>
+        <HighVelocityItems periodGroups={periodGroups} mode={mode} />
       </Card>
 
       {periodGroups.length > 1 ? (
-        <Card title="Period-to-Period Action Shifts" style={{ gridColumn: 'span 2' }}>
+        <Card title="Period-to-Period Action Shifts" style={{ gridColumn: 'span 2' }}
+          info={`Pick two months. This counts how many items changed their action between them (e.g. an item that was Deliver in the first month and Return in the second). "Churn %" is the share of items that changed. The list shows the most common from → to switches.`}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {/* Period selector */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -433,8 +577,9 @@ function MovementTab({ data, periodGroups }) {
 
       {/* Row 4: Action flow Sankey — full width, only if multiple periods */}
       {periodGroups.length > 1 && (
-        <Card title={`Action Flow · ${fmtP(pairFrom)} → ${fmtP(pairTo)}`} style={{ gridColumn: 'span 6' }}>
-          <ActionFlowSankey janData={fromData} febData={toData} fromPeriod={pairFrom} toPeriod={pairTo} />
+        <Card title={`Action Flow${modeTag} · ${fmtP(pairFrom)} → ${fmtP(pairTo)}`} style={{ gridColumn: 'span 6' }}
+          info={`A flow view between the two chosen months. For each starting action on the left, it shows where those items ended up on the right. Flows that stay on the same action = stable items; flows that cross over = items that switched behaviour between the two months.`}>
+          <ActionFlowSankey janData={fromData} febData={toData} fromPeriod={pairFrom} toPeriod={pairTo} mode={mode} />
         </Card>
       )}
     </div>
@@ -454,10 +599,10 @@ function PeriodPicker({ value, onChange, options }) {
 }
 
 
-function NetMovementBars({ periodGroups, dense }) {
+function NetMovementBars({ periodGroups, dense, mode = 'predicted' }) {
   const bars = periodGroups.map(pg => {
-    const del = pg.data.filter(d => d.predictedAction === 'Deliver').reduce((s, d) => s + (d.quantity || 0), 0);
-    const ret = pg.data.filter(d => d.predictedAction === 'Return').reduce((s, d) => s + (d.quantity || 0), 0);
+    const del = pg.data.filter(d => fcAction(d, mode) === 'Deliver').reduce((s, d) => s + fcQty(d, mode), 0);
+    const ret = pg.data.filter(d => fcAction(d, mode) === 'Return').reduce((s, d) => s + fcQty(d, mode), 0);
     return { period: pg.period, deliver: del, return: ret, net: del - ret };
   });
   const maxAbs = Math.max(...bars.flatMap(b => [b.deliver, b.return, Math.abs(b.net)]), 1);
@@ -552,7 +697,7 @@ function InsightsTab({ data, allData, periodGroups, period }) {
   );
 }
 
-function DistributionTab({ data, allData }) {
+function DistributionTab({ data, allData, mode = 'predicted' }) {
   const abcByCode = useMemo(() => {
     const sorted = [...(allData || [])].sort((a, b) => (b.prevClosingBal || 0) - (a.prevClosingBal || 0));
     const codes = [...new Set(sorted.map(d => d.itemCode))];
@@ -565,33 +710,41 @@ function DistributionTab({ data, allData }) {
     return result;
   }, [allData]);
 
+  // Mode tag for titles — only when the month has actuals (so the toggle is
+  // present and the suffix actually disambiguates predicted vs actual). The
+  // ABC tier ranking stays mode-independent (it's based on the prior closing
+  // balance, a known input); only the action split inside each tier flips.
+  const hasActuals = (data || []).some(d => d.actualClosingBal != null);
+  const modeTag = hasActuals ? (mode === 'actual' ? ' · actual' : ' · predicted') : '';
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 'min-content', gap: 12 }}>
       {/* ABC tier cross-tab + Balance bracket */}
-      <Card title="ABC Tier × Action · where is each tier going?" style={{ gridColumn: 'span 3' }}>
-        <ABCDistributionChart data={data} abcByCode={abcByCode} />
+      <Card title={`ABC Tier × Action${modeTag} · where is each tier going?`} style={{ gridColumn: 'span 3' }}
+        info={`Items are ranked by inventory volume into three tiers: A = the top 20% (your highest-volume "vital few"), B = the next 30%, C = the bottom 50% (the long tail). Each tier's bar shows how its items split across Deliver / Return / No Change — so you can see whether your big-volume items behave differently from the small ones. Flip between predicted and actual (when a month has actuals) to spot tiers where reality diverged from the forecast.`}>
+        <ABCDistributionChart data={data} abcByCode={abcByCode} mode={mode} />
       </Card>
-      <Card title="Balance Bracket · action density by balance size" style={{ gridColumn: 'span 3' }}>
-        <BalanceBracketChart data={data} />
+      <Card title={`Balance Bracket${modeTag} · action density by balance size`} style={{ gridColumn: 'span 3' }}
+        info={`Items grouped by how much stock they hold (under 1K units, 1K–10K, etc.). Each band shows the Deliver / Return / No-Change split, revealing whether it's the big-stock or small-stock items that drive most of the movement. In actual mode the bands regroup by the real ending balance and the real actions.`}>
+        <BalanceBracketChart data={data} mode={mode} />
       </Card>
 
       {/* Quantity magnitude heatmap */}
-      <Card title="Action × Quantity Magnitude · item count per cell" style={{ gridColumn: 'span 6' }}>
-        <ActionMagnitudeHeatmap data={data} />
-      </Card>
-
-      {/* Balance scatter */}
-      <Card title="Balance Scatter · previous → predicted closing balance" style={{ gridColumn: 'span 6' }}>
-        <BalanceScatter data={data} />
+      <Card title={`Action × Quantity Magnitude${modeTag} · item count per cell`} style={{ gridColumn: 'span 6' }}
+        info={`A grid counting items by action (rows) against the size of the move in units (columns). Darker cells hold more items. It answers questions like "are most of my returns small quantities, or a few big ones?" In actual mode the move size is the real change in closing balance, |actual − previous|.`}>
+        <ActionMagnitudeHeatmap data={data} mode={mode} />
       </Card>
     </div>
   );
 }
 
 /* ===== MODEL ACCURACY TAB ===== */
-function AccuracyTab({ periodGroups, allData }) {
+function AccuracyTab({ periodGroups, allData, metric = 'mape' }) {
   const modelLabel = 'Monthly';
   const [mapeThresholds, setMapeThresholds] = React.useState(MAPE_DEFAULT_THRESHOLDS);
+  // MAPE vs APE comes from the header toggle (state lifted to App). MAPE = each
+  // item's average error across months; APE = every individual item-month error.
+  const em = metric.toUpperCase();
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gridAutoRows: 'min-content', gap: 12 }}>
       {/* Bucket editor */}
@@ -599,23 +752,33 @@ function AccuracyTab({ periodGroups, allData }) {
         <MapeBucketEditor thresholds={mapeThresholds} onChange={setMapeThresholds} />
       </div>
 
-      {/* Top row — narrower Direction Accuracy + wider Std/HV MAPE charts */}
-      <Card title="Direction Accuracy" style={{ gridColumn: 'span 2' }}>
-        <DirectionAccuracyRing allData={allData} />
-      </Card>
-      <Card title="Item MAPE · Standard items" style={{ gridColumn: 'span 3' }}>
-        <MapeDistributionChart allData={allData} segment="std" thresholds={mapeThresholds} label="standard" />
-      </Card>
-      <Card title="Item MAPE · High-value items" style={{ gridColumn: 'span 3' }}>
-        <MapeDistributionChart allData={allData} segment="hv" thresholds={mapeThresholds} label="high-value" />
+      {/* Direction accuracy — full-width month-wise trend (a single pooled
+          number hides whether the model degrades over the horizon). */}
+      <Card title="Direction Accuracy by Month" style={{ gridColumn: 'span 8' }}
+        info={`For each month with known outcomes, the share of items whose predicted direction matched reality — the model said Deliver and the item delivered, said Return and it returned, said No Change and the balance held. Reading it month-by-month (instead of one pooled average) shows whether accuracy holds up further out in the forecast and which months to trust. The dashed line marks the overall average. The panel on the right keeps the overall hit-rate plus a breakdown by predicted action — i.e. whether the model is more reliable when it calls a Deliver than a Return. Bars are green at 80%+, amber from 60–80%, red below 60%.`}>
+        <DirectionAccuracyByMonth allData={allData} />
       </Card>
 
-      {/* Bottom row — Portfolio chart + MAPE Summary table */}
-      <Card title="Portfolio: Predicted vs Actual Closing Balance" style={{ gridColumn: 'span 4' }}>
+      {/* Error-band histograms (MAPE or APE per the header toggle) */}
+      <Card title={`Item ${em} · Standard items`} style={{ gridColumn: 'span 4' }}
+        info={`${em} = the % difference between predicted and actual closing balance. ${metric === 'mape' ? 'MAPE averages that error per item across all its months — one count per item.' : 'APE counts every item-month forecast separately, showing the full spread of individual errors.'} This histogram buckets Standard items by their error band — the more in the green (<30%) buckets, the more reliable the forecast. Tall bars on the right (>100%) are where the model struggled. Switch MAPE/APE from the top header.`}>
+        <MapeDistributionChart allData={allData} segment="std" thresholds={mapeThresholds} label="standard" metric={metric} />
+      </Card>
+      <Card title={`Item ${em} · High-value items`} style={{ gridColumn: 'span 4' }}
+        info={`Same error-band histogram as the Standard chart, but for High-Value items only — these are the SKUs where accuracy matters most, so you want most of them in the green (<30%) buckets. Currently showing ${em} (${metric === 'mape' ? 'per-item average' : 'every item-month'}).`}>
+        <MapeDistributionChart allData={allData} segment="hv" thresholds={mapeThresholds} label="high-value" metric={metric} />
+      </Card>
+
+      {/* Bottom row — Portfolio chart + MAPE/APE Summary table */}
+      <Card title="Portfolio: Predicted vs Actual Closing Balance" style={{ gridColumn: 'span 4' }}
+        info={`For each month, the total predicted closing balance (indigo) next to the actual (amber), with the % error underneath. The closer the two bars are in height, the more accurate the forecast was that month.`}>
         <PortfolioActualVsPredicted periodGroups={periodGroups} />
       </Card>
-      <Card title="MAPE Summary · by period & model" style={{ gridColumn: 'span 4' }}>
-        <ModelAccuracyTable periodGroups={periodGroups} modelLabel={modelLabel} />
+      <Card title={`${em} Summary · by period & model`} style={{ gridColumn: 'span 4' }}
+        info={metric === 'mape'
+          ? `The model's monthly accuracy table: overall MAPE and High-Value MAPE (lower = better), plus how many items were predicted, delivered, and returned each month. Switch to APE from the top header to see each month's average individual forecast error instead.`
+          : `Each month's average APE — the absolute % error of the individual item forecasts that month (all items and HV) — alongside the predicted / deliver / return counts. Switch back to MAPE from the top header for the model's reported summary.`}>
+        <ModelAccuracyTable periodGroups={periodGroups} modelLabel={modelLabel} allData={allData} metric={metric} />
       </Card>
     </div>
   );
@@ -735,7 +898,7 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
 
   const thStyle = (h) => ({
     padding: '9px 10px', textAlign: h.align, fontSize: 10, fontWeight: 600,
-    color: sortCol === h.col ? 'var(--accent)' : 'var(--text-3)',
+    color: sortCol === h.col ? 'var(--accent)' : 'var(--text-2)',
     cursor: h.sortable ? 'pointer' : 'default', userSelect: 'none',
     textTransform: 'uppercase', letterSpacing: '.05em',
     borderBottom: '2px solid var(--border)', background: '#FAFBFC',
@@ -769,8 +932,8 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
               <button onClick={() => setPeriodFilter('All')} style={{
                 padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)',
                 background: periodFilter === 'All' ? '#fff' : 'transparent',
-                color: periodFilter === 'All' ? 'var(--accent)' : 'var(--text-3)',
-                boxShadow: periodFilter === 'All' ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
+                color: periodFilter === 'All' ? 'var(--accent)' : 'var(--text-2)',
+                boxShadow: periodFilter === 'All' ? '0 1px 3px rgba(0,0,0,.12)' : 'none',
                 whiteSpace: 'nowrap',
               }}>All periods</button>
               <PeriodSelector
@@ -785,8 +948,8 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
                 <button key={p} onClick={() => setPeriodFilter(p)} style={{
                   padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)',
                   background: periodFilter === p ? '#fff' : 'transparent',
-                  color: periodFilter === p ? 'var(--accent)' : 'var(--text-3)',
-                  boxShadow: periodFilter === p ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
+                  color: periodFilter === p ? 'var(--accent)' : 'var(--text-2)',
+                  boxShadow: periodFilter === p ? '0 1px 3px rgba(0,0,0,.12)' : 'none',
                   whiteSpace: 'nowrap',
                 }}>{p === 'All' ? 'All periods' : fmtPeriod(p)}</button>
               ))}
@@ -800,8 +963,8 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
             <button key={a} onClick={() => setActionFilter(a)} style={{
               padding: '4px 11px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)',
               background: actionFilter === a ? '#fff' : 'transparent',
-              color: actionFilter === a ? (a === 'All' ? 'var(--text)' : ac(a)) : 'var(--text-3)',
-              boxShadow: actionFilter === a ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
+              color: actionFilter === a ? (a === 'All' ? 'var(--text)' : ac(a)) : 'var(--text-2)',
+              boxShadow: actionFilter === a ? '0 1px 3px rgba(0,0,0,.12)' : 'none',
             }}>{a}</button>
           ))}
         </div>
@@ -813,8 +976,8 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
               <button key={v} onClick={() => setMatchFilter(v)} style={{
                 padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)',
                 background: matchFilter === v ? '#fff' : 'transparent',
-                color: matchFilter === v ? c : 'var(--text-3)',
-                boxShadow: matchFilter === v ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
+                color: matchFilter === v ? c : 'var(--text-2)',
+                boxShadow: matchFilter === v ? '0 1px 3px rgba(0,0,0,.12)' : 'none',
               }}>{l}</button>
             ))}
           </div>
@@ -827,7 +990,7 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
         </label>
 
         {/* Row count + match summary */}
-        <div style={{ marginLeft: 'auto', display: 'flex', align: 'center', gap: 12, fontSize: 11, color: 'var(--text-3)' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: 'var(--text-2)' }}>
           {hasActuals && <span><span style={{ color: '#059669', fontWeight: 700 }}>{matchCount} ✓</span> · <span style={{ color: '#DC2626', fontWeight: 700 }}>{mismatchCount} ✗</span> direction</span>}
           <span>{filtered.length} of {data.length} rows</span>
         </div>
@@ -844,7 +1007,9 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
               <tr>
                 {cols.map(h => (
                   <th key={h.col} onClick={() => h.sortable && handleSort(h.col)} style={thStyle(h)}>
-                    {h.label}{sortCol === h.col && <span style={{ fontSize: 10, marginLeft: 2 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                    {h.label}{h.sortable && (sortCol === h.col
+                      ? <span style={{ fontSize: 12, marginLeft: 3, color: 'var(--accent)' }}>{sortDir === 'asc' ? '▲' : '▼'}</span>
+                      : <span style={{ fontSize: 9, marginLeft: 3, color: 'var(--text-3)', opacity: .6 }}>↕</span>)}
                   </th>
                 ))}
               </tr>
@@ -896,7 +1061,7 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
                     )}
 
                     {/* Numeric cols */}
-                    <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-3)' }}>{fmt(row.prevClosingBal)}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-2)' }}>{fmt(row.prevClosingBal)}</td>
                     <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700 }}>{fmt(row.predictedClosingBal)}</td>
                     {hasActuals && <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-2)' }}>{row.actualClosingBal != null ? fmt(row.actualClosingBal) : '—'}</td>}
 
@@ -953,7 +1118,7 @@ function KPI({ label, value, sub, subColor, color }) {
   return (
     <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 16px' }}>
       <div style={{ width: 22, height: 3, borderRadius: 2, background: color, marginBottom: 8 }}></div>
-      <div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 10, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600, marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', fontFamily: 'var(--mono)', lineHeight: 1 }}>{value}</div>
       {sub && <div style={{ fontSize: 10, color: subColor || 'var(--text-3)', marginTop: 4, fontWeight: 500 }}>{sub}</div>}
     </div>
@@ -963,15 +1128,15 @@ function KPI({ label, value, sub, subColor, color }) {
 function ExpandBtn({ onClick, absolute }) {
   const base = {
     background: 'none', border: '1px solid var(--border)', borderRadius: 6,
-    padding: '3px 5px', cursor: 'pointer', color: 'var(--text-3)',
-    display: 'flex', alignItems: 'center', transition: 'color .12s, border-color .12s',
+    padding: '3px 5px', cursor: 'pointer', color: 'var(--text-2)',
+    display: 'flex', alignItems: 'center', transition: 'color .12s, border-color .12s, background .12s',
   };
   const pos = absolute ? { position: 'absolute', top: 12, right: 14, zIndex: 2, background: '#fff' } : {};
   return (
     <button onClick={onClick} title="Expand" aria-label="Expand"
       style={{ ...base, ...pos }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)'; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-3)'; }}>
+      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)'; e.currentTarget.style.background = 'var(--hover)'; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-2)'; e.currentTarget.style.background = absolute ? '#fff' : 'none'; }}>
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="15 3 21 3 21 9" />
         <polyline points="9 21 3 21 3 15" />
@@ -982,8 +1147,46 @@ function ExpandBtn({ onClick, absolute }) {
   );
 }
 
-function Card({ title, children, style }) {
+// Small ⓘ button — opens the chart's "How to read" explanation.
+function InfoBtn({ onClick, absolute }) {
+  const base = {
+    background: 'none', border: '1px solid var(--border)', borderRadius: 6,
+    padding: '3px 5px', cursor: 'pointer', color: 'var(--text-2)',
+    display: 'flex', alignItems: 'center', transition: 'color .12s, border-color .12s, background .12s',
+  };
+  const pos = absolute ? { position: 'absolute', top: 12, right: 46, zIndex: 2, background: '#fff' } : {};
+  return (
+    <button onClick={onClick} title="How to read this chart" aria-label="How to read this chart"
+      style={{ ...base, ...pos }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)'; e.currentTarget.style.background = 'var(--hover)'; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-2)'; e.currentTarget.style.background = absolute ? '#fff' : 'none'; }}>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="11" x2="12" y2="16" />
+        <line x1="12" y1="8" x2="12.01" y2="8" />
+      </svg>
+    </button>
+  );
+}
+
+// Accent-tinted explanation panel shown at the top of the maximized modal.
+function InfoPanel({ info }) {
+  if (!info) return null;
+  return (
+    <div style={{ background: 'var(--accent-surface)', border: '1px solid var(--accent-border)', borderRadius: 10, padding: '12px 16px', marginBottom: 16 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="11" x2="12" y2="16" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+        How to read this chart
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>{info}</div>
+    </div>
+  );
+}
+
+function Card({ title, children, style, info }) {
   const [maxed, setMaxed] = React.useState(false);
+  // When the modal is opened via the ⓘ button, the explanation panel starts open.
+  const [showInfo, setShowInfo] = React.useState(false);
   const close = () => setMaxed(false);
   React.useEffect(() => {
     if (!maxed) return;
@@ -991,17 +1194,23 @@ function Card({ title, children, style }) {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [maxed]);
+  const openExpand = () => { setShowInfo(false); setMaxed(true); };
+  const openInfo = () => { setShowInfo(true); setMaxed(true); };
 
   return (
     <>
       <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', position: 'relative', ...style }}>
         {title ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
             <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.01em', flex: 1 }}>{title}</div>
-            <ExpandBtn onClick={() => setMaxed(true)} />
+            {info && <InfoBtn onClick={openInfo} />}
+            <ExpandBtn onClick={openExpand} />
           </div>
         ) : (
-          <ExpandBtn onClick={() => setMaxed(true)} absolute />
+          <>
+            {info && <InfoBtn onClick={openInfo} absolute />}
+            <ExpandBtn onClick={openExpand} absolute />
+          </>
         )}
         {children}
       </div>
@@ -1010,12 +1219,26 @@ function Card({ title, children, style }) {
           style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.40)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
           <div onClick={e => e.stopPropagation()}
             style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, width: 'min(1200px, calc(100vw - 48px))', maxHeight: 'calc(100vh - 48px)', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.04)' }}>
-            <div style={{ padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em' }}>{title || 'Detail view'}</div>
+            <div style={{ padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', flexShrink: 0, gap: 10 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em', flex: 1, minWidth: 0 }}>{title || 'Detail view'}</div>
+              {/* Toggle the explanation on/off inside the modal too. */}
+              {info && (
+                <button onClick={() => setShowInfo(s => !s)} style={{
+                  display: 'flex', alignItems: 'center', gap: 6, background: showInfo ? 'var(--accent)' : 'var(--surface-2)',
+                  color: showInfo ? '#fff' : 'var(--text-2)', border: 'none', borderRadius: 8, padding: '6px 12px',
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)', whiteSpace: 'nowrap',
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="11" x2="12" y2="16" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                  How to read
+                </button>
+              )}
               <button onClick={close} title="Close (Esc)" aria-label="Close"
-                style={{ background: 'var(--surface-2)', border: 'none', color: 'var(--text-2)', cursor: 'pointer', width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, lineHeight: 1 }}>×</button>
+                style={{ background: 'var(--surface-2)', border: 'none', color: 'var(--text-2)', cursor: 'pointer', width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, lineHeight: 1, flexShrink: 0 }}>×</button>
             </div>
-            <div style={{ padding: '20px 24px', overflow: 'auto', flex: 1 }}>{children}</div>
+            <div style={{ padding: '20px 24px', overflow: 'auto', flex: 1 }}>
+              {showInfo && <InfoPanel info={info} />}
+              {children}
+            </div>
           </div>
         </div>
       )}
@@ -1032,7 +1255,7 @@ function PgBtn({ label, active, disabled, onClick }) {
       color: active ? '#fff' : disabled ? 'var(--text-3)' : 'var(--text-2)',
       fontSize: 12, fontWeight: 600, cursor: disabled ? 'default' : 'pointer',
       fontFamily: 'var(--font)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      opacity: disabled ? .4 : 1, transition: 'all .12s',
+      opacity: disabled ? .55 : 1, transition: 'all .12s',
     }}>{label}</button>
   );
 }
