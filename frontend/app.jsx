@@ -28,13 +28,16 @@ function PeriodSelector({ value, onChange, options }) {
   const Arrow = ({ dir, on, onClick }) => (
     <button onClick={onClick} disabled={!on} aria-label={dir === 'prev' ? 'Previous month' : 'Next month'}
       style={{
-        width: 30, height: 32, borderRadius: 7, border: '1px solid var(--border)',
-        background: on ? 'var(--surface-2)' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        cursor: on ? 'pointer' : 'default', color: on ? 'var(--text)' : 'var(--text-3)',
-        fontSize: 15, lineHeight: 1, opacity: on ? 1 : 0.45, transition: 'background .12s',
+        width: 30, height: 32, borderRadius: 7,
+        border: '1px solid ' + (on ? 'var(--accent)' : 'var(--accent-border)'),
+        background: on ? 'var(--accent)' : 'var(--accent-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: on ? 'pointer' : 'default', color: on ? '#fff' : 'var(--accent)',
+        fontSize: 15, lineHeight: 1, opacity: on ? 1 : 0.55,
+        boxShadow: on ? '0 1px 3px rgba(79,70,229,.35)' : 'none',
+        transition: 'background .12s, box-shadow .12s',
       }}
-      onMouseEnter={e => { if (on) e.currentTarget.style.background = 'var(--hover)'; }}
-      onMouseLeave={e => { if (on) e.currentTarget.style.background = 'var(--surface-2)'; }}
+      onMouseEnter={e => { if (on) e.currentTarget.style.background = '#4338CA'; }}
+      onMouseLeave={e => { if (on) e.currentTarget.style.background = 'var(--accent)'; }}
     >{dir === 'prev' ? '‹' : '›'}</button>
   );
   return (
@@ -143,6 +146,7 @@ function App() {
     : page === 'actionflow' ? 'Action Flow'
     : page === 'accuracy' ? 'Model Accuracy'
     : page === 'explorer' ? 'Item Explorer'
+    : page === 'newitems' ? 'New Items'
     : page === 'forecasts' ? 'Item Forecasts'
     : 'Upload Data';
 
@@ -244,6 +248,7 @@ function App() {
           {page === 'actionflow' && <ActionFlowPage allData={data} />}
           {page === 'accuracy' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: '14px 20px 20px' }}><AccuracyTab periodGroups={periodGroups} allData={data} metric={errorMetric} /></div>}
           {page === 'explorer' && <ItemExplorerPage allData={data} period={activePeriod} mode={explorerMode} />}
+          {page === 'newitems' && <NewItemsPage allData={data} />}
           {page === 'forecasts' && <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '14px 20px 0' }}><ItemForecastsGrid allData={data || []} /></div>}
           {page === 'upload' && <div style={{ padding: 24, overflow: 'auto' }}><UploadDataPage onOpenDataSource={() => setDsOpen(true)} /></div>}
         </main>
