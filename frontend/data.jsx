@@ -401,7 +401,10 @@ function SearchBox({ value, onType, onPick, onClear, options, placeholder, width
   const [open, setOpen] = React.useState(false);
   const [active, setActive] = React.useState(-1);
   const ref = React.useRef(null);
-  const cap = maxItems || 8;
+  // No cap — show every match (the dropdown scrolls). A cap silently hid most
+  // of a family (e.g. searching "s150" dropped the 3m / 4m variants). A caller
+  // can still pass maxItems explicitly, but by default it's unlimited.
+  const cap = maxItems || Infinity;
 
   const suggestions = React.useMemo(() => {
     if (!value || !value.trim()) return [];

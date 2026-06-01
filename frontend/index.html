@@ -5,6 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Forecast Intel — Monthly Predictions</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;450;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+/* Display-scaling normaliser. A typical Windows laptop runs at 125% OS
+   scaling, so the UI reads comfortably there at browser-100%. Macs (and other
+   standard-DPI screens) render it noticeably smaller, so the client has to
+   zoom to 125% by hand. Nudge those screens up automatically so the dashboard
+   looks the same everywhere; Windows is left untouched. */
+(function () {
+  try {
+    var ua = navigator.userAgent || '', plat = navigator.platform || '';
+    var isWindows = /Win/i.test(plat) || /Windows/i.test(ua);
+    if (!isWindows) document.documentElement.style.zoom = '1.25';
+  } catch (e) {}
+})();
+</script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {

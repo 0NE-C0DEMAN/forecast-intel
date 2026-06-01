@@ -69,6 +69,16 @@ _LOGIN_HTML = r"""<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<script>
+/* Match the app: bump non-Windows screens (Mac etc.) up to 125% so the UI
+   isn't tiny there. Windows (usually 125% OS scaling) is left at 100%. */
+(function () {
+  try {
+    var ua = navigator.userAgent || '', plat = navigator.platform || '';
+    if (!(/Win/i.test(plat) || /Windows/i.test(ua))) document.documentElement.style.zoom = '1.25';
+  } catch (e) {}
+})();
+</script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
