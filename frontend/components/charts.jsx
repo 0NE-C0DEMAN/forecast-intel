@@ -1204,7 +1204,11 @@ function MapeDistributionChart({ allData, segment = 'all', thresholds: threshold
 
 /* ===== DIRECTION ACCURACY RING ===== */
 function DirectionAccuracyByMonth({ allData }) {
-  const withActuals = (allData || []).filter(d => d.directionCorrect != null);
+  // All items vs High-value only (Sonu asked for an HV filter here — the chart
+  // was always showing all items).
+  const [segment, setSegment] = React.useState('all');
+  const base = (allData || []).filter(d => d.directionCorrect != null);
+  const withActuals = segment === 'hv' ? base.filter(d => d.isHV) : segment === 'std' ? base.filter(d => !d.isHV) : base;
   const total = withActuals.length;
   const correct = withActuals.filter(d => d.directionCorrect).length;
   const overallPct = total > 0 ? correct / total : 0;
@@ -1245,11 +1249,22 @@ function DirectionAccuracyByMonth({ allData }) {
   const minW = Math.max(pL + byMonth.length * slot + pR, 320);
 
   return (
-    <div style={{ display: 'flex', gap: 20, alignItems: 'stretch', flexWrap: 'wrap' }}>
-      {/* Month-wise trend (the hero) */}
+    <div>
+      {/* All / High-value toggle */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Items</span>
+        <div style={{ display: 'inline-flex', background: 'var(--surface-2)', borderRadius: 9, padding: 3, gap: 3 }}>
+          {[['all', 'All'], ['std', 'Standard'], ['hv', 'High value']].map(([k, lbl]) => {
+            const on = segment === k;
+            return <button key={k} onClick={() => setSegment(k)} style={{ padding: '4px 13px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700, fontFamily: 'var(--font)', background: on ? 'var(--accent)' : 'transparent', color: on ? '#fff' : 'var(--text-2)', transition: 'background .12s, color .12s' }}>{lbl}</button>;
+          })}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 20, alignItems: 'stretch', flexWrap: 'wrap' }}>
+        {/* Month-wise trend (the hero) */}
       <div style={{ flex: '1 1 440px', minWidth: 0 }}>
         <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>
-          Share of items whose predicted direction matched the actual move, each month. Dashed line = overall average.
+          Share of {segment === 'hv' ? 'high-value items' : segment === 'std' ? 'standard items' : 'items'} whose predicted direction matched the actual move, each month. Dashed line = overall average.
         </div>
         <div className="h-scroller">
           <svg width="100%" height={svgH} viewBox={`0 0 ${minW} ${svgH}`} preserveAspectRatio="xMinYMid meet" style={{ display: 'block', minWidth: minW }}>
@@ -1305,6 +1320,7 @@ function DirectionAccuracyByMonth({ allData }) {
             </div>
           ))}
         </div>
+      </div>
       </div>
     </div>
   );
