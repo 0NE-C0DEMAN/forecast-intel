@@ -21,18 +21,10 @@ function ItemInsightPage({ allData }) {
     return out.sort((a, b) => (a.label || '').localeCompare(b.label || ''));
   }, [allData]);
 
-  // Default: ABJ if present (Sonu's example), else the highest-volume item.
-  const defaultCode = React.useMemo(() => {
-    if (!items.length) return null;
-    const abj = items.find(i => /^ABJ/i.test(i.code || '')); if (abj) return abj.code;
-    const tot = {}; (allData || []).forEach(d => { tot[d.itemCode] = (tot[d.itemCode] || 0) + (d.predictedClosingBal || 0); });
-    const top = Object.entries(tot).sort((a, b) => b[1] - a[1])[0];
-    return top ? top[0] : items[0].code;
-  }, [items, allData]);
-
+  // No item is pre-selected: the page loads blank and waits for a search, so
+  // the user always starts from their own pick rather than a default item.
   const [search, setSearch] = React.useState('');
   const [sel, setSel] = React.useState(null);
-  React.useEffect(() => { if (defaultCode) setSel(s => s || defaultCode); }, [defaultCode]);
 
   const item = React.useMemo(() => {
     if (!sel) return null;
@@ -121,7 +113,7 @@ function ItemInsightPage({ allData }) {
         <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Pick an item to see its full demand history.</span>
       </div>
 
-      {item && stats && (
+      {item && stats ? (
         <>
           {/* Header */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -225,6 +217,14 @@ function ItemInsightPage({ allData }) {
             </div>
           </div>
         </>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '72px 24px 80px', color: 'var(--text-3)' }}>
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ opacity: 0.45, marginBottom: 14 }}>
+            <circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.35-4.35"></path>
+          </svg>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-2)', marginBottom: 5 }}>Search for an item to begin</div>
+          <div style={{ fontSize: 12, maxWidth: 430, lineHeight: 1.5 }}>Type a name or code in the box above to see its demand history, peak and seasonality, action mix, and forecast accuracy.</div>
+        </div>
       )}
     </div>
   );
