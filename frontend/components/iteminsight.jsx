@@ -94,12 +94,16 @@ function ItemInsightPage({ allData }) {
       arr.slice().sort((x, y) => y.rem - x.rem).forEach(o => { if (left > 0) { o.f++; left--; } });
       const out = {}; arr.forEach(o => { out[o.a] = o.f; }); return out;
     })();
-    // accuracy
-    const mapeVals = item.periods.map(p => p.itemMape).filter(v => v != null);
-    const avgMape = mapeVals.length ? mapeVals.reduce((a, b) => a + b, 0) / mapeVals.length : null;
+    // accuracy — MAPE for an item is the mean of its monthly absolute % errors
+    // (APE), taken straight from the monthly APE values rather than blending the
+    // per-year item_mape figures. For a single item, average APE == MAPE.
+    // Model accuracy is the intuitive inverse, 100 − MAPE (floored at 0).
+    const apeVals = item.periods.map(p => p.ape).filter(v => v != null);
+    const avgApe = apeVals.length ? apeVals.reduce((a, b) => a + b, 0) / apeVals.length : null;
+    const modelAcc = avgApe != null ? Math.max(0, 100 - avgApe) : null;
     const dirRows = item.periods.filter(p => p.directionCorrect != null);
     const dirMatch = dirRows.length ? Math.round(dirRows.filter(p => p.directionCorrect).length / dirRows.length * 100) : null;
-    return { series, basis, histN: histRows.length, peak, low, avg, latest, delivered, returned, monthAvg, maxMA, peakMonth, seasonIsActual, seasonYears, mix, mixN, mixPct, avgMape, dirMatch };
+    return { series, basis, histN: histRows.length, peak, low, avg, latest, delivered, returned, monthAvg, maxMA, peakMonth, seasonIsActual, seasonYears, mix, mixN, mixPct, avgApe, modelAcc, dirMatch };
   }, [item]);
 
   if (!items.length) return <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-3)', fontSize: 14 }}>No item data available.</div>;
@@ -109,8 +113,18 @@ function ItemInsightPage({ allData }) {
       {/* Item picker */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Item</span>
-        <SearchBox value={search} onType={v => setSearch(v)} onPick={opt => { setSel(opt.code); setSearch(opt.label); }} onClear={() => setSearch('')} options={items} placeholder="Search any item by name or code…" width="0 0 380px" />
-        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Pick an item to see its full demand history.</span>
+        <SearchBox value={search} onType={v => setSearch(v)} onPick={opt => { setSel(opt.code); setSearch(opt.label); }} onClear={() => { setSearch(''); setSel(null); }} options={items} placeholder="Search any item by name or code…" width="0 0 380px" />
+        {sel ? (
+          <button onClick={() => { setSel(null); setSearch(''); }}
+            style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)', background: '#fff', border: '1px solid var(--border)', borderRadius: 7, padding: '6px 11px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--hover)'; e.currentTarget.style.color = 'var(--text)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = 'var(--text-2)'; }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+            Clear
+          </button>
+        ) : (
+          <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Pick an item to see its full demand history.</span>
+        )}
       </div>
 
       {item && stats ? (
@@ -168,17 +182,27 @@ function ItemInsightPage({ allData }) {
               {/* Accuracy */}
               <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' }}>
                 <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Forecast accuracy</div>
-                <div style={{ display: 'flex', gap: 18 }}>
-                  <div>
-                    <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--mono)', lineHeight: 1, color: stats.avgMape == null ? 'var(--text-3)' : stats.avgMape < 30 ? '#059669' : stats.avgMape <= 100 ? '#D97706' : '#DC2626' }}>{stats.avgMape != null ? stats.avgMape.toFixed(1) + '%' : '—'}</div>
-                    <div style={{ fontSize: 9, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 600, marginTop: 4 }}>Avg MAPE</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--mono)', lineHeight: 1, color: stats.dirMatch == null ? 'var(--text-3)' : stats.dirMatch >= 80 ? '#059669' : stats.dirMatch >= 60 ? '#D97706' : '#DC2626' }}>{stats.dirMatch != null ? stats.dirMatch + '%' : '—'}</div>
-                    <div style={{ fontSize: 9, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 600, marginTop: 4 }}>Direction match</div>
-                  </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 14px' }}>
+                  {[
+                    { v: stats.avgApe, label: 'Avg MAPE', kind: 'err' },
+                    { v: stats.avgApe, label: 'Avg APE', kind: 'err' },
+                    { v: stats.modelAcc, label: 'Model accuracy', kind: 'acc' },
+                    { v: stats.dirMatch, label: 'Direction match', kind: 'dir' },
+                  ].map(c => {
+                    const col = c.v == null ? 'var(--text-3)'
+                      : c.kind === 'err' ? (c.v < 30 ? '#059669' : c.v <= 100 ? '#D97706' : '#DC2626')
+                      : c.kind === 'acc' ? (c.v >= 80 ? '#059669' : c.v >= 50 ? '#D97706' : '#DC2626')
+                      : (c.v >= 80 ? '#059669' : c.v >= 60 ? '#D97706' : '#DC2626');
+                    const txt = c.v == null ? '—' : (c.kind === 'dir' ? Math.round(c.v) + '%' : c.v.toFixed(1) + '%');
+                    return (
+                      <div key={c.label}>
+                        <div style={{ fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', lineHeight: 1, color: col }}>{txt}</div>
+                        <div style={{ fontSize: 9, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 600, marginTop: 4 }}>{c.label}</div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 8, lineHeight: 1.5 }}>How close the forecast has been for this item across the months with actuals.</div>
+                <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 10, lineHeight: 1.5 }}>Error (MAPE / APE) against model accuracy (100 - MAPE), plus how often the predicted direction was right — across the months with actuals.</div>
               </div>
             </div>
           </div>
