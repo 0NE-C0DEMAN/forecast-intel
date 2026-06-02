@@ -61,12 +61,27 @@ function ItemInsightPage({ allData }) {
     const latest = series[series.length - 1];
     const delivered = basis.filter(s => s.action === 'Deliver').reduce((a, s) => a + s.qty, 0);
     const returned = basis.filter(s => s.action === 'Return').reduce((a, s) => a + s.qty, 0);
-    // seasonality — average on-site by calendar month
+    // Seasonality — on-site by calendar month, over the ACTUAL history. Each
+    // calendar month is averaged across every year that has an actual reading
+    // (2026 forecast months are excluded). Coverage isn't uniform across the
+    // catalogue: most items have two full years (2024+2025), some only 2025,
+    // and brand-new items have no actuals at all — so we track which years feed
+    // each bar and state the basis honestly rather than implying "all years".
+    const seasonIsActual = histRows.length > 0;
     const byMonth = {};
-    basis.forEach(s => { if (s.bal == null) return; const m = parseInt(s.period.split('-')[1]); (byMonth[m] = byMonth[m] || { sum: 0, n: 0 }); byMonth[m].sum += s.bal; byMonth[m].n++; });
-    const monthAvg = Array.from({ length: 12 }, (_, i) => { const m = i + 1, b = byMonth[m]; return { m, label: MN[m], avg: b && b.n ? b.sum / b.n : null }; });
+    basis.forEach(s => {
+      if (s.bal == null) return;
+      const parts = s.period.split('-'), yy = parts[0], m = parseInt(parts[1]);
+      const b = (byMonth[m] = byMonth[m] || { sum: 0, n: 0, years: {} });
+      b.sum += s.bal; b.n++; b.years[yy] = true;
+    });
+    const monthAvg = Array.from({ length: 12 }, (_, i) => {
+      const m = i + 1, b = byMonth[m];
+      return { m, label: MN[m], avg: b && b.n ? b.sum / b.n : null, yrs: b ? Object.keys(b.years).sort() : [] };
+    });
     const maxMA = Math.max(...monthAvg.map(x => x.avg || 0), 1);
     let peakMonth = null; monthAvg.forEach(x => { if (x.avg != null && (!peakMonth || x.avg > peakMonth.avg)) peakMonth = x; });
+    const seasonYears = Object.keys(basis.filter(s => s.bal != null).reduce((o, s) => { o[s.period.split('-')[0]] = 1; return o; }, {})).sort();
     // action mix
     const mix = { Deliver: 0, Return: 0, 'No Change': 0 }; basis.forEach(s => { if (mix[s.action] != null) mix[s.action]++; });
     const mixN = basis.length || 1;
@@ -82,7 +97,7 @@ function ItemInsightPage({ allData }) {
     const avgMape = mapeVals.length ? mapeVals.reduce((a, b) => a + b, 0) / mapeVals.length : null;
     const dirRows = item.periods.filter(p => p.directionCorrect != null);
     const dirMatch = dirRows.length ? Math.round(dirRows.filter(p => p.directionCorrect).length / dirRows.length * 100) : null;
-    return { series, basis, histN: histRows.length, peak, low, avg, latest, delivered, returned, monthAvg, maxMA, peakMonth, mix, mixN, mixPct, avgMape, dirMatch };
+    return { series, basis, histN: histRows.length, peak, low, avg, latest, delivered, returned, monthAvg, maxMA, peakMonth, seasonIsActual, seasonYears, mix, mixN, mixPct, avgMape, dirMatch };
   }, [item]);
 
   if (!items.length) return <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-3)', fontSize: 14 }}>No item data available.</div>;
@@ -167,16 +182,31 @@ function ItemInsightPage({ allData }) {
 
           {/* Seasonality */}
           <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Seasonality · average on-site by month</div>
-            <div style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 12 }}>{stats.peakMonth ? `Demand for this item is highest in ${MNL[stats.peakMonth.m]}.` : 'Average units on-site for each calendar month, across all tracked years.'}</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>Seasonality · on-site by calendar month</div>
+              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', background: 'var(--surface-2)', padding: '2px 8px', borderRadius: 20 }}>
+                {!stats.seasonIsActual ? 'forecast basis' : stats.seasonYears.length >= 2 ? `avg of ${stats.seasonYears[0]}–${stats.seasonYears[stats.seasonYears.length - 1]}` : `${stats.seasonYears[0] || ''} only`}
+              </span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 12 }}>
+              {stats.peakMonth ? `Demand for this item is highest in ${MNL[stats.peakMonth.m]}. ` : ''}
+              {!stats.seasonIsActual
+                ? 'Based on the forecast — this item has no actuals recorded yet.'
+                : stats.seasonYears.length >= 2
+                  ? `Each bar averages that month across ${stats.seasonYears[0]}–${stats.seasonYears[stats.seasonYears.length - 1]} actuals.`
+                  : `Based on ${stats.seasonYears[0]} actuals only — not enough history yet to average across years.`}
+            </div>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 130 }}>
               {stats.monthAvg.map(x => {
                 const h = x.avg != null ? Math.max(x.avg / stats.maxMA * 100, 2) : 0;
                 const isPeak = stats.peakMonth && x.m === stats.peakMonth.m;
+                const tip = x.avg == null
+                  ? x.label + ': no data'
+                  : x.label + ': ' + fmtK(x.avg) + (stats.seasonIsActual ? (x.yrs.length ? ' · ' + x.yrs.join(', ') : '') : ' · forecast');
                 return (
                   <div key={x.m} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
                     <div style={{ fontSize: 8.5, fontFamily: 'var(--mono)', color: 'var(--text-3)', marginBottom: 2, whiteSpace: 'nowrap' }}>{x.avg != null ? fmtK(x.avg) : ''}</div>
-                    <div title={x.label + ': ' + (x.avg != null ? fmtK(x.avg) : 'no data')} style={{ width: '68%', height: h + '%', minHeight: x.avg != null ? 2 : 0, background: isPeak ? 'var(--accent)' : '#C7D2FE', borderRadius: '3px 3px 0 0', transition: 'height .15s' }}></div>
+                    <div title={tip} style={{ width: '68%', height: h + '%', minHeight: x.avg != null ? 2 : 0, background: isPeak ? 'var(--accent)' : '#C7D2FE', borderRadius: '3px 3px 0 0', transition: 'height .15s' }}></div>
                     <div style={{ fontSize: 9, color: isPeak ? 'var(--text)' : 'var(--text-3)', fontWeight: isPeak ? 700 : 400, marginTop: 5 }}>{x.label}</div>
                   </div>
                 );
