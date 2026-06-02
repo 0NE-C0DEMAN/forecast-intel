@@ -50,7 +50,13 @@ function ItemInsightPage({ allData }) {
       bal: p.actualClosingBal != null ? p.actualClosingBal : p.predictedClosingBal,
       isActual: p.actualClosingBal != null,
       action: p.actualAction || p.predictedAction,
-      qty: p.quantity || 0,
+      // Actual months: real net movement (|close − prev|, 0 if prev unknown).
+      // Forecast months: the model's action quantity. Same convention as the
+      // app-wide fcQty(), so "total delivered / returned" reflect what actually
+      // happened rather than what was predicted.
+      qty: p.actualClosingBal != null
+        ? (p.prevClosingBal != null ? Math.abs(p.actualClosingBal - p.prevClosingBal) : 0)
+        : (p.quantity || 0),
     }));
     const histRows = series.filter(s => s.isActual);
     const basis = histRows.length ? histRows : series;
@@ -58,7 +64,11 @@ function ItemInsightPage({ allData }) {
     let peak = null, low = null, sum = 0;
     withBal.forEach(s => { if (!peak || s.bal > peak.bal) peak = s; if (!low || s.bal < low.bal) low = s; sum += s.bal; });
     const avg = withBal.length ? sum / withBal.length : null;
-    const latest = series[series.length - 1];
+    // "Latest" = most recent ACTUAL reading, not the last point in the series.
+    // The forecast can run many months out and degrade toward zero at long
+    // horizons, so the final forecast point is a misleading "current level".
+    // Items with no actuals (brand-new) fall back to their last forecast point.
+    const latest = histRows.length ? histRows[histRows.length - 1] : series[series.length - 1];
     const delivered = basis.filter(s => s.action === 'Deliver').reduce((a, s) => a + s.qty, 0);
     const returned = basis.filter(s => s.action === 'Return').reduce((a, s) => a + s.qty, 0);
     // Seasonality — on-site by calendar month, over the ACTUAL history. Each
@@ -127,7 +137,7 @@ function ItemInsightPage({ allData }) {
               { label: 'Peak on-site', value: fmtK(stats.peak ? stats.peak.bal : null), sub: stats.peak ? fmtP(stats.peak.period) : '', color: 'var(--accent)' },
               { label: 'Average', value: fmtK(stats.avg), sub: 'units per month', color: 'var(--text)' },
               { label: 'Lowest', value: fmtK(stats.low ? stats.low.bal : null), sub: stats.low ? fmtP(stats.low.period) : '', color: 'var(--text)' },
-              { label: 'Latest', value: fmtK(stats.latest ? stats.latest.bal : null), sub: stats.latest ? fmtP(stats.latest.period) : '', color: 'var(--text)' },
+              { label: 'Latest', value: fmtK(stats.latest ? stats.latest.bal : null), sub: stats.latest ? (fmtP(stats.latest.period) + (stats.latest.isActual ? '' : ' · forecast')) : '', color: 'var(--text)' },
               { label: 'Total delivered', value: fmtK(stats.delivered), sub: 'units out', color: '#059669' },
               { label: 'Total returned', value: fmtK(stats.returned), sub: 'units back', color: '#DC2626' },
             ].map(c => (
