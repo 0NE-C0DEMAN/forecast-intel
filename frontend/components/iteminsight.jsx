@@ -129,6 +129,7 @@ function ItemInsightPage({ allData }) {
             <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text-3)' }}>{item.itemCode}</span>
             {item.isHV && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-surface)', padding: '2px 9px', borderRadius: 20 }}>★ High value</span>}
             <span style={{ fontSize: 10, color: 'var(--text-2)' }}>{stats.series.length} months tracked · {stats.histN} with actuals</span>
+            {stats.histN === 0 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-surface)', border: '1px solid var(--accent-border)', padding: '2px 9px', borderRadius: 20 }}>Forecast basis · no actuals yet</span>}
           </div>
 
           {/* KPI grid */}
