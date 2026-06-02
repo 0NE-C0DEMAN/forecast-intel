@@ -132,6 +132,7 @@ function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDa
     { id: 'actionflow', label: 'Action Flow', icon: 'flow' },
     { id: 'accuracy', label: 'Model Accuracy', icon: 'target' },
     { id: 'forecasts', label: 'Item Forecasts', icon: 'forecasts', badge: null },
+    { id: 'iteminsight', label: 'Item Insights', icon: 'bulb' },
     { id: 'explorer', label: 'Item Explorer', icon: 'table', badge: itemCount },
     { id: 'newitems', label: 'New Items', icon: 'sparkle' },
     { id: 'upload', label: 'Upload Data', icon: 'upload' },
@@ -152,6 +153,7 @@ function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDa
     target: <><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></>,
     flow: <><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></>,
     sparkle: <><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"></path><path d="M19 14l.8 2.1L22 17l-2.2.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z"></path></>,
+    bulb: <><path d="M9 18h6"></path><path d="M10 22h4"></path><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5.76.76 1.23 1.52 1.41 2.5"></path></>,
   };
 
   const SvgIcon = ({ name, size = 18 }) => (

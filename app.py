@@ -1033,7 +1033,7 @@ def _supabase_source_label(run_meta: dict | None) -> str:
 # Supabase hook + mappers used by everything else; `app` is the entry
 # component and must be last.
 _COMPONENT_FILES = [
-    "sidebar", "charts", "explorer", "insights", "upload", "datasource", "actionflow", "newitems",
+    "sidebar", "charts", "explorer", "insights", "upload", "datasource", "actionflow", "newitems", "iteminsight",
 ]
 _TOP_LEVEL_JSX = ["tweaks-panel", "data", "app"]
 
@@ -1196,6 +1196,7 @@ window.__switchYear = function(year) {
         ("components/insights.jsx", "insights"),
         ("components/actionflow.jsx", "actionflow"),
         ("components/newitems.jsx", "newitems"),
+        ("components/iteminsight.jsx", "iteminsight"),
         ("app.jsx", "app"),
     ]
     for src_path, key in refs:
