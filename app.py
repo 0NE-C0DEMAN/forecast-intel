@@ -1028,6 +1028,73 @@ def _supabase_source_label(run_meta: dict | None) -> str:
     return "Supabase · " + " · ".join(bits)
 
 
+# ---------------------------------------------------------------------------
+# Tecscon forecast pipeline API — monthly ledger upload + job polling.
+# The operator uploads a month's ledger; we POST it to the pipeline service
+# SERVER-SIDE (so the API key never reaches the browser), then poll the job
+# until it finishes and reload Supabase. Spec: Tecscon_API_Integration_Guide.
+# ---------------------------------------------------------------------------
+def _tecscon_creds() -> tuple[str | None, str | None]:
+    try:
+        url = st.secrets.get("tecscon_api_url")
+        key = st.secrets.get("tecscon_api_key")
+    except Exception:
+        return None, None
+    return (str(url).rstrip("/") if url else None, str(key) if key else None)
+
+
+def _api_upload_ledger(file_bytes: bytes, filename: str, url: str, key: str) -> dict:
+    """POST the ledger to /api/process-ledger. Returns the queued-job payload
+    ({job_id, year_month, status, message}). Raises on non-2xx / network error."""
+    import requests
+    resp = requests.post(
+        f"{url}/api/process-ledger",
+        files={"file": (filename or "ledger.xlsx", file_bytes)},
+        headers={"X-API-Key": key},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _api_job_status(job_id: str, url: str, key: str) -> dict:
+    """GET /api/job-status/{job_id}. Returns the status payload."""
+    import requests
+    resp = requests.get(
+        f"{url}/api/job-status/{job_id}",
+        headers={"X-API-Key": key},
+        timeout=20,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _reload_all_from_supabase() -> bool:
+    """Re-pull every prediction from Supabase (busting the short TTL cache) so
+    the dashboard reflects rows the pipeline just wrote. True on success."""
+    url, key = _supabase_creds()
+    if not (url and key):
+        return False
+    try:
+        _fetch_supabase_runs.clear()
+        _fetch_all_supabase_predictions.clear()
+    except Exception:
+        pass
+    try:
+        runs = _fetch_supabase_runs(url, key)
+        records, mape_summary, meta = _load_supabase_all(url, key, runs)
+    except Exception:
+        return False
+    if not records:
+        return False
+    st.session_state.records = records
+    st.session_state.mape_summary = mape_summary
+    st.session_state.source_label = _supabase_all_source_label(meta)
+    st.session_state.runs_list = runs
+    st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    return True
+
+
 # Component JSX files (top-level helpers + per-screen widgets) that get
 # inlined into the served HTML.  Order matters: `data` exposes the
 # Supabase hook + mappers used by everything else; `app` is the entry
@@ -1164,6 +1231,7 @@ window.__switchYear = function(year) {
     # rerun, no iframe reload). The anon key is meant for client-side use
     # — RLS is enforced server-side, the key just identifies the project.
     sb_url, sb_key = _supabase_creds()
+    upload_job = st.session_state.get("upload_job")
     fetch_new = (
         f"window.__RAW_DATA = {json_str}; "
         f"window.__MAPE_SUMMARY = {mape_str}; "
@@ -1175,6 +1243,7 @@ window.__switchYear = function(year) {
         f"window.__LAST_ERROR = {json.dumps(last_error)}; "
         f"window.__SUPABASE_URL = {json.dumps(sb_url)}; "
         f"window.__SUPABASE_KEY = {json.dumps(sb_key)}; "
+        f"window.__UPLOAD_JOB = {json.dumps(upload_job)}; "
         f"{bridge_js} "
         "setTimeout(() => window.dispatchEvent(new Event('dataready')), 0);"
     )
@@ -1434,6 +1503,37 @@ if upload is not None:
                     st.session_state.last_error = None
             except Exception as exc:
                 st.session_state.last_error = f"Failed to load run #{new_run_id}: {exc}"
+    elif upload.name.startswith("__LEDGER_UPLOAD__"):
+        # Operator uploaded a monthly ledger. Hand it to the forecast pipeline
+        # API (server-side, key stays in secrets) and start tracking the job.
+        # Guard on file_id so a persisted upload isn't re-POSTed on later reruns.
+        fid = getattr(upload, "file_id", None)
+        if st.session_state.get("_ledger_fid") != fid:
+            st.session_state["_ledger_fid"] = fid
+            api_url, api_key = _tecscon_creds()
+            if not (api_url and api_key):
+                st.session_state.last_error = (
+                    "Upload pipeline isn't configured — add tecscon_api_url and "
+                    "tecscon_api_key to .streamlit/secrets.toml (or Cloud Secrets)."
+                )
+            else:
+                orig = upload.name[len("__LEDGER_UPLOAD__"):].strip() or "ledger.xlsx"
+                try:
+                    res = _api_upload_ledger(upload.getvalue(), orig, api_url, api_key)
+                    st.session_state.upload_job = {
+                        "job_id": res.get("job_id"),
+                        "year_month": res.get("year_month"),
+                        "status": res.get("status", "queued"),
+                        "current_step": res.get("message"),
+                        "error_message": None,
+                        "file_name": orig,
+                        "started_at": datetime.now().strftime("%H:%M"),
+                    }
+                    st.session_state.last_error = None
+                except Exception as exc:
+                    st.session_state.last_error = f"Could not start the forecast pipeline: {exc}"
+    elif upload.name.startswith("__JOB_CLEAR__"):
+        st.session_state.pop("upload_job", None)
     elif upload.name != "__LOGIN_ATTEMPT__.csv":
         recs, issues, mape_from_upload = parse_uploaded_records(upload.getvalue(), upload.name)
         if recs is None:
@@ -1460,3 +1560,38 @@ html_doc = build_html(
     current_year=st.session_state.get("current_year"),
 )
 components_html(html_doc, height=1100, scrolling=True)
+
+# ---------------------------------------------------------------------------
+# Poll an in-flight pipeline job. The fragment reruns on its own every 30s
+# WITHOUT re-rendering the dashboard iframe (so the 12-18 min wait isn't a
+# flicker-fest); only when the job finishes does it reload Supabase and do a
+# single full rerun so the fresh predictions appear.
+# ---------------------------------------------------------------------------
+_job = st.session_state.get("upload_job")
+if _job and _job.get("status") in ("queued", "running") and all(_tecscon_creds()):
+
+    @st.fragment(run_every="30s")
+    def _poll_upload_job():
+        j = st.session_state.get("upload_job")
+        if not j or j.get("status") not in ("queued", "running"):
+            return
+        a_url, a_key = _tecscon_creds()
+        try:
+            s = _api_job_status(j["job_id"], a_url, a_key)
+        except Exception:
+            return  # transient network error — try again on the next tick
+        if not s:
+            return
+        j["status"] = s.get("status", j["status"])
+        j["current_step"] = s.get("current_step")
+        j["error_message"] = s.get("error_message")
+        j["year_month"] = s.get("year_month", j.get("year_month"))
+        st.session_state.upload_job = j
+        if j["status"] == "complete":
+            _reload_all_from_supabase()
+            st.rerun()
+        elif j["status"] == "failed":
+            st.session_state.last_error = "Forecast pipeline failed: " + (j.get("error_message") or "unknown error")
+            st.rerun()
+
+    _poll_upload_job()

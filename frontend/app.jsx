@@ -67,7 +67,7 @@ function PeriodSelector({ value, onChange, options }) {
 function App() {
   const sb = useSupabaseData();
   const [hydrated, setHydrated] = useState(() => (window.__RAW_DATA != null));
-  const [page, setPage] = useState('lineitems');
+  const [page, setPage] = useState(() => (typeof window !== 'undefined' && window.__UPLOAD_JOB) ? 'upload' : 'lineitems');
   const [period, setPeriod] = useState(null);
   const [collapsed, setCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 900);
   const [dsOpen, setDsOpen] = useState(false);
