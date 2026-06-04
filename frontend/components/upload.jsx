@@ -9,7 +9,7 @@ function UploadDataPage({ onOpenDataSource }) {
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 4 }}>Upload Data</h2>
         <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
-          Upload a new month's ledger to retrain the model and refresh the forecasts, or load a results file directly to preview it.
+          Upload the monthly stock ledger export — it goes straight to the forecasting pipeline, which validates it and refreshes the predictions.
         </div>
       </div>
 
@@ -31,26 +31,6 @@ function UploadDataPage({ onOpenDataSource }) {
           onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#CBD0D8'; }}>Reset to Bundled</button>
       </div>
 
-      {/* Upload area */}
-      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: 24, marginBottom: 20 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Upload a fresh dataset</div>
-        <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 16 }}>Drag and drop the new month's training or testing file here.</div>
-        <DropZone />
-      </div>
-
-      {/* Schema */}
-      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: 24 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Schema Expectations</div>
-        <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 16 }}>These are the columns the validator looks for in the Monthly sheet.</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {expectedCols.map(col => (
-            <span key={col} style={{ padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: 'rgba(79,70,229,.06)', color: 'var(--accent)', border: '1px solid rgba(79,70,229,.12)' }}>{col}</span>
-          ))}
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 14, lineHeight: 1.5 }}>
-          If your CSV file contains only the monthly sheet, that's fine — we'll auto-map it. For multi-sheet workbooks we look for a tab named <strong>Monthly_Predictions</strong> (or any sheet whose name contains "month").
-        </div>
-      </div>
     </div>
   );
 }
@@ -246,7 +226,7 @@ function LedgerUpdateCard() {
     <div style={wrap}>
       <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>Update forecasts with a new month</div>
       <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 16, lineHeight: 1.6 }}>
-        Upload the monthly stock ledger straight from the system — no need to reformat it. We clean it automatically, run the forecasting pipeline on the server, and write fresh predictions. The dashboard updates on its own when it finishes (about 12–18 minutes).
+        Upload the monthly stock ledger exactly as the system exports it — it goes straight to the forecasting pipeline, which validates and processes it and writes fresh predictions. The dashboard updates on its own when it finishes (about 12–18 minutes).
       </div>
       <div onClick={() => fileRef.current && fileRef.current.click()}
         style={{ border: '2px dashed #C4C9D2', borderRadius: 12, padding: '24px 20px', textAlign: 'center', cursor: 'pointer', background: '#FAFBFC' }}>
@@ -267,7 +247,7 @@ function LedgerUpdateCard() {
       )}
       {err && <div style={{ marginTop: 10, fontSize: 12, color: '#DC2626', fontWeight: 600 }}>{err}</div>}
       <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 14, lineHeight: 1.55 }}>
-        Upload the stock ledger export as-is (.xlsx). The title/banner rows, customer-group rows, extra columns and blank rows are stripped automatically — we keep the transaction rows and send them to the pipeline. One month per file; the month is detected from the dates.
+        Upload the stock ledger export exactly as the system produces it (.xlsx) — no reformatting needed. The pipeline parses and validates it. One month per file; the month is detected from the dates.
       </div>
     </div>
   );

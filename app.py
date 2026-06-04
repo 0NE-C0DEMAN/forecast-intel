@@ -1630,42 +1630,31 @@ if upload is not None:
                     "THIS app's Settings -> Secrets, click Save, and reboot the app."
                 )
             else:
+                # Send the raw ledger straight to the pipeline, untouched. The
+                # Azure side parses and validates the customer's export format,
+                # so we do NOT transform or schema-check it here.
                 orig = upload.name[len("__LEDGER_UPLOAD__"):].strip() or "ledger.xlsx"
-                # Clean the raw customer-wise export into the pipeline's format
-                # first, so the customer can upload their file exactly as exported.
-                clean_bytes, norm_err, nstats = _normalize_ledger(upload.getvalue())
-                if norm_err:
-                    st.session_state.last_error = "Could not read the ledger — " + norm_err
-                else:
-                    try:
-                        base = orig.rsplit(".", 1)[0] if "." in orig else orig
-                        res = _api_upload_ledger(clean_bytes, base + "_normalized.xlsx", api_url, api_key)
-                        st.session_state.upload_job = {
-                            "job_id": res.get("job_id"),
-                            "year_month": res.get("year_month"),
-                            "status": res.get("status", "queued"),
-                            "current_step": res.get("message"),
-                            "error_message": None,
-                            "file_name": orig,
-                            "rows": nstats.get("rows"),
-                            "started_at": datetime.now().strftime("%H:%M"),
-                        }
-                        st.session_state.last_error = None
-                    except Exception as exc:
-                        st.session_state.last_error = f"Could not start the forecast pipeline: {exc}"
+                try:
+                    res = _api_upload_ledger(upload.getvalue(), orig, api_url, api_key)
+                    st.session_state.upload_job = {
+                        "job_id": res.get("job_id"),
+                        "year_month": res.get("year_month"),
+                        "status": res.get("status", "queued"),
+                        "current_step": res.get("message"),
+                        "error_message": None,
+                        "file_name": orig,
+                        "started_at": datetime.now().strftime("%H:%M"),
+                    }
+                    st.session_state.last_error = None
+                except Exception as exc:
+                    st.session_state.last_error = f"Could not start the forecast pipeline: {exc}"
     elif upload.name.startswith("__JOB_CLEAR__"):
         st.session_state.pop("upload_job", None)
-    elif upload.name != "__LOGIN_ATTEMPT__.csv":
-        recs, issues, mape_from_upload = parse_uploaded_records(upload.getvalue(), upload.name)
-        if recs is None:
-            st.session_state.last_error = "; ".join(issues) if issues else "File rejected."
-        else:
-            st.session_state.records = recs
-            st.session_state.mape_summary = mape_from_upload
-            st.session_state.source_label = f"Uploaded · {upload.name}"
-            st.session_state.current_run_id = None  # uploaded file is not a Supabase run
-            st.session_state.loaded_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-            st.session_state.last_error = None
+    # NOTE: the old "upload a results Excel and preview it" path (which schema-
+    # checked the file for a Monthly_Predictions sheet) has been removed. The
+    # only upload now is the monthly ledger, which is forwarded raw to the
+    # pipeline (handled by the __LEDGER_UPLOAD__ branch above); validation of
+    # the ledger format happens on the Azure side.
 
 
 last_error = st.session_state.last_error
