@@ -246,7 +246,7 @@ function LedgerUpdateCard() {
     <div style={wrap}>
       <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>Update forecasts with a new month</div>
       <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 16, lineHeight: 1.6 }}>
-        Upload the month's ledger (.xlsx). It runs the full forecasting pipeline on the server and writes fresh predictions to the database — the dashboard updates automatically when it finishes (about 12–18 minutes).
+        Upload the monthly stock ledger straight from the system — no need to reformat it. We clean it automatically, run the forecasting pipeline on the server, and write fresh predictions. The dashboard updates on its own when it finishes (about 12–18 minutes).
       </div>
       <div onClick={() => fileRef.current && fileRef.current.click()}
         style={{ border: '2px dashed #C4C9D2', borderRadius: 12, padding: '24px 20px', textAlign: 'center', cursor: 'pointer', background: '#FAFBFC' }}>
@@ -267,7 +267,7 @@ function LedgerUpdateCard() {
       )}
       {err && <div style={{ marginTop: 10, fontSize: 12, color: '#DC2626', fontWeight: 600 }}>{err}</div>}
       <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 14, lineHeight: 1.55 }}>
-        Format: a single sheet named <b>Sheet1</b> with columns SN, ItemCode, Item Name, Date, Type, Doc No, Site No and Project, W/H, Qty Dlv, Qty Ret, Balance · dates DD/MM/YYYY · one month per file (the month is detected automatically).
+        Upload the stock ledger export as-is (.xlsx). The title/banner rows, customer-group rows, extra columns and blank rows are stripped automatically — we keep the transaction rows and send them to the pipeline. One month per file; the month is detected from the dates.
       </div>
     </div>
   );

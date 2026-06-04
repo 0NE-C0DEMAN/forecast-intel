@@ -1069,6 +1069,109 @@ def _api_job_status(job_id: str, url: str, key: str) -> dict:
     return resp.json()
 
 
+_LEDGER_COLUMNS = ["SN", "ItemCode", "Item Name", "Date", "Type", "Doc No",
+                   "Site No and Project", "W/H", "Qty Dlv", "Qty Ret", "Balance"]
+
+
+def _normalize_ledger(file_bytes: bytes) -> tuple[bytes | None, str | None, dict]:
+    """Turn the raw 'customer-wise stock ledger' ERP export into the clean
+    single-sheet layout the pipeline expects, so the customer can upload their
+    file exactly as exported. We:
+      - find the real header row (skipping company/title banner rows),
+      - map the 11 required columns by name (ignoring extra cols like Order No,
+        LPO No, Ref. No),
+      - keep only transaction rows (drop 'Customer' section headers, blank
+        separator rows, and dateless subtotal lines),
+      - normalise dates to DD/MM/YYYY and renumber SN.
+    Returns (clean_xlsx_bytes, error_message, stats)."""
+    import io as _io
+    import datetime as _dt
+    import re as _re
+    import openpyxl
+
+    try:
+        wb = openpyxl.load_workbook(_io.BytesIO(file_bytes), read_only=True, data_only=True)
+    except Exception as exc:
+        return None, f"could not open the Excel file ({exc.__class__.__name__})", {}
+    try:
+        ws = wb[wb.sheetnames[0]]
+        data = list(ws.iter_rows(values_only=True))
+    except Exception as exc:
+        return None, f"could not read the sheet ({exc.__class__.__name__})", {}
+    finally:
+        try:
+            wb.close()
+        except Exception:
+            pass
+
+    # Locate the header row: scan the first 30 rows for one carrying SN + ItemCode.
+    header = None
+    hdr_i = None
+    for i, r in enumerate(data[:30]):
+        vals = [str(c).strip() if c is not None else "" for c in r]
+        if "SN" in vals and "ItemCode" in vals:
+            header, hdr_i = vals, i
+            break
+    if header is None:
+        return None, ("couldn't find the ledger header row (expected columns like SN, "
+                      "ItemCode, Item Name, Date...). Is this the stock-ledger export?"), {}
+
+    idx = {n: header.index(n) for n in _LEDGER_COLUMNS if n in header}
+    missing = [c for c in _LEDGER_COLUMNS if c not in idx]
+    if missing:
+        return None, "the ledger is missing expected columns: " + ", ".join(missing), {}
+
+    def fmt_date(v):
+        if isinstance(v, (_dt.datetime, _dt.date)):
+            return v.strftime("%d/%m/%Y")
+        s = str(v).strip()
+        m = _re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})", s)
+        return f"{int(m.group(1)):02d}/{int(m.group(2)):02d}/{m.group(3)}" if m else s
+
+    def cell(r, name):
+        i = idx[name]
+        return r[i] if i < len(r) else None
+
+    out: list[list] = []
+    cust = blank = nodate = 0
+    for r in data[hdr_i + 1:]:
+        item = cell(r, "ItemCode")
+        if isinstance(item, str) and item.strip() == "Customer":
+            cust += 1
+            continue
+        if (item is None or str(item).strip() == "") and cell(r, "SN") is None:
+            blank += 1
+            continue
+        d = cell(r, "Date")
+        if d is None or str(d).strip() == "":
+            nodate += 1
+            continue
+        out.append([
+            len(out) + 1, cell(r, "ItemCode"), cell(r, "Item Name"), fmt_date(d),
+            cell(r, "Type"), cell(r, "Doc No"), cell(r, "Site No and Project"),
+            cell(r, "W/H"), cell(r, "Qty Dlv"), cell(r, "Qty Ret"), cell(r, "Balance"),
+        ])
+    if not out:
+        return None, "no transaction rows found after cleaning the ledger.", {}
+
+    nwb = openpyxl.Workbook()
+    nws = nwb.active
+    nws.title = "Sheet1"
+    nws.append(_LEDGER_COLUMNS)
+    for row in out:
+        nws.append(row)
+    for rr in range(2, 2 + len(out)):
+        nws.cell(row=rr, column=4).number_format = "@"  # keep Date as text
+    buf = _io.BytesIO()
+    nwb.save(buf)
+    months = sorted({row[3][6:10] + "-" + row[3][3:5] for row in out
+                     if _re.match(r"^\d{2}/\d{2}/\d{4}$", row[3])})
+    return buf.getvalue(), None, {
+        "rows": len(out), "skipped_customer": cust, "skipped_blank": blank,
+        "skipped_nodate": nodate, "months": months,
+    }
+
+
 def _reload_all_from_supabase() -> bool:
     """Re-pull every prediction from Supabase (busting the short TTL cache) so
     the dashboard reflects rows the pipeline just wrote. True on success."""
@@ -1512,26 +1615,44 @@ if upload is not None:
             st.session_state["_ledger_fid"] = fid
             api_url, api_key = _tecscon_creds()
             if not (api_url and api_key):
+                # Report exactly which secrets THIS running instance can see (key
+                # names only, never values) so a "but I added it!" can be settled
+                # instantly — if tecscon_* aren't listed, they aren't on this app.
+                try:
+                    seen = [k for k in ("password", "supabase_url", "supabase_key",
+                                        "tecscon_api_url", "tecscon_api_key") if k in st.secrets]
+                except Exception:
+                    seen = []
                 st.session_state.last_error = (
-                    "Upload pipeline isn't configured — add tecscon_api_url and "
-                    "tecscon_api_key to .streamlit/secrets.toml (or Cloud Secrets)."
+                    "Upload pipeline isn't configured on this deployment. Secrets this app "
+                    "instance can currently see: " + (", ".join(seen) if seen else "none")
+                    + ". If tecscon_api_url / tecscon_api_key aren't in that list, add them to "
+                    "THIS app's Settings -> Secrets, click Save, and reboot the app."
                 )
             else:
                 orig = upload.name[len("__LEDGER_UPLOAD__"):].strip() or "ledger.xlsx"
-                try:
-                    res = _api_upload_ledger(upload.getvalue(), orig, api_url, api_key)
-                    st.session_state.upload_job = {
-                        "job_id": res.get("job_id"),
-                        "year_month": res.get("year_month"),
-                        "status": res.get("status", "queued"),
-                        "current_step": res.get("message"),
-                        "error_message": None,
-                        "file_name": orig,
-                        "started_at": datetime.now().strftime("%H:%M"),
-                    }
-                    st.session_state.last_error = None
-                except Exception as exc:
-                    st.session_state.last_error = f"Could not start the forecast pipeline: {exc}"
+                # Clean the raw customer-wise export into the pipeline's format
+                # first, so the customer can upload their file exactly as exported.
+                clean_bytes, norm_err, nstats = _normalize_ledger(upload.getvalue())
+                if norm_err:
+                    st.session_state.last_error = "Could not read the ledger — " + norm_err
+                else:
+                    try:
+                        base = orig.rsplit(".", 1)[0] if "." in orig else orig
+                        res = _api_upload_ledger(clean_bytes, base + "_normalized.xlsx", api_url, api_key)
+                        st.session_state.upload_job = {
+                            "job_id": res.get("job_id"),
+                            "year_month": res.get("year_month"),
+                            "status": res.get("status", "queued"),
+                            "current_step": res.get("message"),
+                            "error_message": None,
+                            "file_name": orig,
+                            "rows": nstats.get("rows"),
+                            "started_at": datetime.now().strftime("%H:%M"),
+                        }
+                        st.session_state.last_error = None
+                    except Exception as exc:
+                        st.session_state.last_error = f"Could not start the forecast pipeline: {exc}"
     elif upload.name.startswith("__JOB_CLEAR__"):
         st.session_state.pop("upload_job", None)
     elif upload.name != "__LOGIN_ATTEMPT__.csv":
