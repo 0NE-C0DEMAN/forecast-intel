@@ -885,8 +885,11 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
   React.useEffect(() => { setTablePage(0); }, [actionFilter, hvOnly, matchFilter, search, exactItem, periodFilter]);
 
   // Summary stats for toolbar
-  const matchCount = data.filter(d => d.directionCorrect === true).length;
-  const mismatchCount = data.filter(d => d.directionCorrect === false).length;
+  // Direction tallies follow the active filters (HV Only, period, action, …) so
+  // the toolbar summary matches what's actually in the table — compute from
+  // `filtered`, not the full `data`.
+  const matchCount = filtered.filter(d => d.directionCorrect === true).length;
+  const mismatchCount = filtered.filter(d => d.directionCorrect === false).length;
 
   const cols = [
     ...(standalone ? [{ col: 'period', label: 'Period', width: '7%', align: 'left', sortable: true }] : []),

@@ -141,7 +141,70 @@ function ItemInsightPage({ allData }) {
       };
     });
 
-    return { series, basis, histN: histRows.length, peak, low, avg, latest, delivered, returned, monthAvg, maxMA, peakMonth, seasonIsActual, seasonYears, mix, mixN, mixPct, avgApe, modelAcc, dirMatch, predPct, actPct, actionMatch, cmpN, matrix, matrixYears };
+    // ---- Next month's outlook + how much to trust it -------------------
+    // "coming" = the first forecast month after the latest actual. Confidence
+    // is read from the recent track record (last 6 actual months) and how the
+    // model did for that same calendar month in prior years.
+    const pAsc = item.periods;
+    const actualRows = pAsc.filter(p => p.actualClosingBal != null);
+    const futureRows = pAsc.filter(p => p.actualClosingBal == null);
+    const lastActualP = actualRows.length ? actualRows[actualRows.length - 1].period : null;
+    const coming = futureRows.find(p => !lastActualP || p.period > lastActualP) || futureRows[0] || null;
+
+    const last6 = actualRows.slice(-6);
+    const r6ape = last6.map(p => p.ape).filter(v => v != null);
+    const r6dir = last6.filter(p => p.directionCorrect != null);
+    const recent6 = {
+      n: last6.length,
+      ape: r6ape.length ? r6ape.reduce((a, b) => a + b, 0) / r6ape.length : null,
+      dirN: r6dir.length,
+      dirHits: r6dir.filter(p => p.directionCorrect).length,
+    };
+
+    let sameMonth = null;
+    if (coming) {
+      const cm = parseInt(coming.period.split('-')[1]);
+      const cells = matrix[cm] ? Object.values(matrix[cm]).filter(c => c.hasActual) : [];
+      const dc = cells.filter(c => c.dir != null);
+      const apc = cells.filter(c => c.ape != null);
+      sameMonth = {
+        m: cm,
+        dirN: dc.length,
+        dirHits: dc.filter(c => c.dir).length,
+        ape: apc.length ? apc.reduce((a, c) => a + c.ape, 0) / apc.length : null,
+      };
+    }
+
+    let confidence = null;
+    if (coming) {
+      const dirRates = [];
+      if (recent6.dirN) dirRates.push(recent6.dirHits / recent6.dirN);
+      if (sameMonth && sameMonth.dirN) dirRates.push(sameMonth.dirHits / sameMonth.dirN);
+      const dirScore = dirRates.length ? dirRates.reduce((a, b) => a + b, 0) / dirRates.length : null;
+      const apeArr = [recent6.ape, sameMonth && sameMonth.ape].filter(v => v != null);
+      const apeScore = apeArr.length ? apeArr.reduce((a, b) => a + b, 0) / apeArr.length : null;
+      if (dirScore != null || apeScore != null) {
+        const dirGood = dirScore != null && dirScore >= 0.6;
+        const dirOk = dirScore != null && dirScore >= 0.4;
+        const apeGood = apeScore != null && apeScore <= 15;
+        const apeOk = apeScore != null && apeScore <= 30;
+        let level = 'Low';
+        if ((dirGood && apeOk) || (apeGood && dirGood)) level = 'High';
+        else if (dirOk || apeOk) level = 'Medium';
+        let note;
+        if (apeScore != null && apeScore <= 20 && dirScore != null && dirScore < 0.5)
+          note = 'Forecast sizes have been close, but the up/down direction is often wrong — trust the quantity more than the direction.';
+        else if (dirScore != null && dirScore >= 0.6 && apeScore != null && apeScore <= 20)
+          note = 'Both the size and the direction have held up for this item.';
+        else if ((dirScore == null || dirScore < 0.5) && (apeScore == null || apeScore > 30))
+          note = 'Recent forecasts for this item have been off — treat this prediction with caution.';
+        else
+          note = 'Mixed track record — use this as a guide, not a guarantee.';
+        confidence = { level, dirScore, apeScore, note };
+      }
+    }
+
+    return { series, basis, histN: histRows.length, peak, low, avg, latest, delivered, returned, monthAvg, maxMA, peakMonth, seasonIsActual, seasonYears, mix, mixN, mixPct, avgApe, modelAcc, dirMatch, predPct, actPct, actionMatch, cmpN, matrix, matrixYears, coming, recent6, sameMonth, confidence };
   }, [item]);
 
   if (!items.length) return <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-3)', fontSize: 14 }}>No item data available.</div>;
@@ -267,6 +330,51 @@ function ItemInsightPage({ allData }) {
               </div>
             </div>
           </div>
+
+          {/* Next month's outlook + confidence */}
+          {stats.coming && (
+            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Next month's outlook</div>
+              <div style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 14 }}>What the model expects next, and how much to trust it — based on its recent months and how it has done for this month in prior years.</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 18, alignItems: 'center' }}>
+                <div style={{ borderRight: '1px solid var(--border)', paddingRight: 18 }}>
+                  <div style={{ fontSize: 10.5, color: 'var(--text-3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>{fmtP(stats.coming.period)} · forecast</div>
+                  <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--mono)', color: 'var(--accent)', lineHeight: 1.1, marginTop: 4 }}>{fmtK(stats.coming.predictedClosingBal)}</div>
+                  <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 1 }}>units on-site expected</div>
+                  {stats.coming.predictedAction && (
+                    <span style={{ display: 'inline-block', marginTop: 10, fontSize: 11, fontWeight: 700, color: ac(stats.coming.predictedAction), background: stats.coming.predictedAction === 'Deliver' ? 'rgba(5,150,105,.08)' : stats.coming.predictedAction === 'Return' ? 'rgba(220,38,38,.07)' : 'rgba(217,119,6,.08)', padding: '3px 11px', borderRadius: 20 }}>{stats.coming.predictedAction}{stats.coming.quantity != null ? ' · ' + fmtK(stats.coming.quantity) : ''}</span>
+                  )}
+                </div>
+                <div>
+                  {stats.confidence ? (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                        <span style={{ fontSize: 11, color: 'var(--text-2)', fontWeight: 600 }}>Confidence</span>
+                        <span style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', padding: '3px 12px', borderRadius: 20,
+                          color: stats.confidence.level === 'High' ? '#047857' : stats.confidence.level === 'Medium' ? '#B45309' : '#B91C1C',
+                          background: stats.confidence.level === 'High' ? 'rgba(5,150,105,.10)' : stats.confidence.level === 'Medium' ? 'rgba(217,119,6,.10)' : 'rgba(220,38,38,.08)' }}>{stats.confidence.level}</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 7, fontSize: 11.5 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                          <span style={{ color: 'var(--text-2)' }}>Last {stats.recent6.n} month{stats.recent6.n === 1 ? '' : 's'}</span>
+                          <span style={{ fontFamily: 'var(--mono)', color: 'var(--text)' }}>{stats.recent6.dirN ? stats.recent6.dirHits + '/' + stats.recent6.dirN + ' direction' : '—'}{stats.recent6.ape != null ? ' · ' + Math.round(stats.recent6.ape) + '% APE' : ''}</span>
+                        </div>
+                        {stats.sameMonth && stats.sameMonth.dirN > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                            <span style={{ color: 'var(--text-2)' }}>{MNL[stats.sameMonth.m]}, prior years</span>
+                            <span style={{ fontFamily: 'var(--mono)', color: 'var(--text)' }}>{stats.sameMonth.dirHits + '/' + stats.sameMonth.dirN + ' direction'}{stats.sameMonth.ape != null ? ' · ' + Math.round(stats.sameMonth.ape) + '% APE' : ''}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 11, lineHeight: 1.5 }}>{stats.confidence.note}</div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.6 }}>Not enough actual history yet to judge how reliable this forecast is. A confidence read will appear here once a few months of actuals are in.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Monthly reliability — how often the forecast was right per month, across years */}
           <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
