@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -1644,12 +1644,29 @@ if upload is not None:
                         "error_message": None,
                         "file_name": orig,
                         "started_at": datetime.now().strftime("%H:%M"),
+                        # UTC anchor so the browser-side progress panel can
+                        # match THIS upload's validation_runs row even before
+                        # (or without) a pipeline_jobs row appearing.
+                        "started_iso": datetime.now(timezone.utc).isoformat(),
                     }
                     st.session_state.last_error = None
                 except Exception as exc:
                     st.session_state.last_error = f"Could not start the forecast pipeline: {exc}"
     elif upload.name.startswith("__JOB_CLEAR__"):
         st.session_state.pop("upload_job", None)
+    elif upload.name.startswith("__JOB_DONE__"):
+        # The browser-side progress poller saw the pipeline finish. Pull the
+        # fresh predictions in now and flip the job to complete so the success
+        # state shows on this same rerun, instead of waiting on the 30s backup
+        # poll below. Guard on file_id so it only reloads once per signal.
+        fid = getattr(upload, "file_id", None)
+        if st.session_state.get("_jobdone_fid") != fid:
+            st.session_state["_jobdone_fid"] = fid
+            j = st.session_state.get("upload_job")
+            if j:
+                j["status"] = "complete"
+                st.session_state.upload_job = j
+            _reload_all_from_supabase()
     # NOTE: the old "upload a results Excel and preview it" path (which schema-
     # checked the file for a Monthly_Predictions sheet) has been removed. The
     # only upload now is the monthly ledger, which is forwarded raw to the

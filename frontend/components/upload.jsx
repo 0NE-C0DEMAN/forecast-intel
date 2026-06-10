@@ -129,12 +129,217 @@ function DropZone() {
   );
 }
 
+/* ---- Live pipeline progress (Sonu's step-by-step + validation view) -------
+   While a job is in flight we poll Supabase directly from the browser:
+     pipeline_jobs   (by job_id)     -> phase/status/current_step/error
+     validation_runs (by year_month) -> each validation check + hard stop
+   Polling client-side means the panel updates smoothly with no iframe reload
+   during the 12-18 min wait. */
+
+function PhIcon({ s, sm, big }) {
+  const sz = big ? 22 : sm ? 15 : 18;
+  const ring = { width: sz, height: sz, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxSizing: 'border-box' };
+  if (s === 'running') return (<svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.6" strokeLinecap="round" style={{ animation: 'fi-spin .8s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.22-8.56"></path></svg>);
+  if (s === 'pass') return (<span style={{ ...ring, background: '#059669' }}><svg width={Math.round(sz * 0.6)} height={Math.round(sz * 0.6)} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>);
+  if (s === 'fail') return (<span style={{ ...ring, background: '#DC2626' }}><svg width={Math.round(sz * 0.52)} height={Math.round(sz * 0.52)} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></span>);
+  if (s === 'skip') return (<span style={{ ...ring, background: '#E5E7EB' }}><svg width={Math.round(sz * 0.5)} height={Math.round(sz * 0.5)} viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="3" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg></span>);
+  return (<span style={{ ...ring, border: '2px solid #D1D5DB' }}></span>);
+}
+
+function CheckRow({ c }) {
+  const pass = String(c.status || '').toUpperCase() === 'PASS';
+  return (
+    <div style={{ display: 'flex', gap: 8, marginTop: 9, alignItems: 'flex-start' }}>
+      <div style={{ marginTop: 1 }}><PhIcon s={pass ? 'pass' : 'fail'} sm /></div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: pass ? 'var(--text)' : '#B91C1C' }}>
+          {c.name}
+          <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, letterSpacing: '.04em', color: pass ? '#059669' : '#DC2626' }}>{pass ? 'PASS' : 'FAIL'}</span>
+        </div>
+        {c.message && <div style={{ fontSize: 11.5, color: 'var(--text-2)', marginTop: 1, lineHeight: 1.45 }}>{c.message}</div>}
+      </div>
+    </div>
+  );
+}
+
+function PhaseRow({ s, title, detail, children }) {
+  const muted = s === 'pending' || s === 'skip';
+  return (
+    <div style={{ display: 'flex', gap: 12, padding: '7px 0' }}>
+      <div style={{ marginTop: 1 }}><PhIcon s={s} /></div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 700, color: muted ? 'var(--text-3)' : 'var(--text)' }}>{title}</div>
+        {detail && <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 1, lineHeight: 1.5 }}>{detail}</div>}
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function JobProgress({ job, onDismiss, onDone }) {
+  const [jobRow, setJobRow] = React.useState(null);
+  const [val, setVal] = React.useState(null);
+  const firedDone = React.useRef(false);
+
+  React.useEffect(() => {
+    let alive = true, timer = null;
+    const base = window.__SUPABASE_URL, key = window.__SUPABASE_KEY;
+    const get = async (path) => {
+      if (!base || !key) return null;
+      try {
+        const r = await fetch(base + '/rest/v1/' + path, { headers: { apikey: key, Authorization: 'Bearer ' + key } });
+        if (!r.ok) return null;
+        return await r.json();
+      } catch (e) { return null; }
+    };
+    const poll = async () => {
+      let jr = null;
+      if (job.job_id) {
+        const rows = await get('pipeline_jobs?select=*&limit=1&job_id=eq.' + encodeURIComponent(job.job_id));
+        jr = (rows && rows[0]) || null;
+      }
+      const ym = (jr && jr.year_month) || job.year_month;
+      // Match THIS upload's validation run (the same month can have many):
+      // year_month within a short window of when the job started. Anchor on
+      // the pipeline_jobs row if present, else the upload time we recorded —
+      // a validation row can exist even when the job row doesn't (early fail).
+      const anchor = (jr && jr.created_at) || job.started_iso;
+      let vr = null;
+      if (ym && anchor) {
+        const lower = new Date(new Date(anchor).getTime() - 120000).toISOString();
+        const rows = await get('validation_runs?select=*&order=upload_timestamp.desc&limit=1&year_month=eq.' + encodeURIComponent(ym) + '&upload_timestamp=gte.' + encodeURIComponent(lower));
+        vr = (rows && rows[0]) || null;
+      }
+      if (!alive) return;
+      if (jr) setJobRow(jr);
+      if (vr) setVal(vr);
+      const st = (jr && jr.status) || job.status;
+      if (st === 'complete' && job.status !== 'complete' && !firedDone.current) {
+        firedDone.current = true;
+        try { onDone && onDone(); } catch (e) { /* noop */ }
+      }
+      if (st === 'queued' || st === 'running') timer = setTimeout(poll, 4000);
+    };
+    poll();
+    return () => { alive = false; if (timer) clearTimeout(timer); };
+  }, [job.job_id]);
+
+  const status = (jobRow && jobRow.status) || job.status || 'queued';
+  const ym = (jobRow && jobRow.year_month) || job.year_month;
+  const checksRaw = (val && val.checks_summary) || [];
+  const checks = checksRaw.slice().sort((a, b) => (a.check_id || 0) - (b.check_id || 0));
+  const overall = val && String(val.overall_result || '').toUpperCase();
+  const autofixes = (val && val.auto_fixes_applied) || [];
+  const hardStopReason = val && val.hard_stop_reason;
+  const hardStop = hardStopReason || (status === 'failed' ? ((jobRow && jobRow.error_message) || job.error_message) : null);
+  const frId = jobRow && jobRow.forecast_run_id;
+  const step = (jobRow && jobRow.current_step) || job.current_step;
+  const failed = status === 'failed' || overall === 'FAIL';
+  const done = status === 'complete';
+
+  // The pipeline doesn't always write a validation_runs row on success — but
+  // it does keep pipeline_jobs.current_step updated. Infer which stage the
+  // run is in from that text so the phases advance live either way.
+  const t = String(step || '').toLowerCase();
+  const stage = !t ? null
+    : /done|saved|complete|writ|insert|database|supabase/.test(t) ? 'save'
+    : /sav/.test(t) ? 'save'
+    : /train|model|forecast|generat|predict|season/.test(t) ? 'forecast'
+    : /valid|pars|read|check|load|struct/.test(t) ? 'validate'
+    : null;
+
+  const valPassed = overall === 'PASS' || (!val && (done || !!frId || stage === 'forecast' || stage === 'save'));
+  const phUpload = 'pass';
+  const phVal = overall === 'FAIL' ? 'fail'
+    : valPassed ? 'pass'
+    : failed ? 'fail'
+    : 'running';
+  const phFore = overall === 'FAIL' ? 'skip'
+    : (done || !!frId || stage === 'save') ? 'pass'
+    : failed ? (valPassed ? 'fail' : 'skip')
+    : valPassed ? 'running'
+    : 'pending';
+  const phSave = done ? 'pass'
+    : failed ? 'skip'
+    : (phFore === 'pass' && stage === 'save') ? 'running'
+    : 'pending';
+
+  const tone = done ? '#047857' : failed ? '#B91C1C' : 'var(--accent)';
+  const wrap = {
+    border: '1px solid',
+    borderColor: done ? 'rgba(5,150,105,.28)' : failed ? 'rgba(220,38,38,.26)' : 'var(--accent-border)',
+    background: done ? 'rgba(5,150,105,.04)' : failed ? 'rgba(220,38,38,.035)' : 'var(--accent-surface)',
+    borderRadius: 12, padding: 22, marginBottom: 20,
+  };
+
+  const valDetail = phVal === 'running' ? ((stage === 'validate' && step) ? step : 'Running the file & data checks…')
+    : phVal === 'pass' ? (checks.length ? checks.length + ' checks passed' : 'All checks passed')
+    : overall === 'FAIL' ? 'Stopped on a failing check'
+    : 'Did not complete';
+  const foreDetail = phFore === 'running' ? ((stage === 'forecast' && step) ? step : 'Retraining the model and generating the new forecast…')
+    : phFore === 'pass' ? 'Model retrained on the latest month'
+    : phFore === 'fail' ? ((jobRow && jobRow.error_message) || 'The forecasting step reported an error')
+    : phFore === 'skip' ? 'Not run'
+    : 'Waiting for validation to pass';
+  const saveClean = step ? String(step).replace(/^\s*Done\s*[—–-]\s*/i, '') : '';
+  const saveDetail = phSave === 'pass' ? (saveClean || 'Predictions written to the database')
+    : phSave === 'running' ? (step || 'Saving predictions…')
+    : phSave === 'skip' ? 'Not run' : '—';
+
+  return (
+    <div style={wrap}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+        <PhIcon s={done ? 'pass' : failed ? 'fail' : 'running'} big />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: tone }}>
+            {done ? 'Forecasts updated' : failed ? 'Pipeline stopped' : 'Updating forecasts'}{ym ? ' · ' + ym : ''}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 1, lineHeight: 1.5 }}>
+            {done ? 'Fresh predictions are now live on the dashboard.'
+              : failed ? (overall === 'FAIL' ? 'A validation check did not pass — see the details below.' : 'The pipeline reported an error — see the details below.')
+              : 'Validating and retraining on the server — about 12–18 minutes. You can keep using the dashboard.'}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '6px 16px' }}>
+        <PhaseRow s={phUpload} title="Upload received" detail={'Ledger handed to the pipeline' + (ym ? ' · ' + ym : '')} />
+        <PhaseRow s={phVal} title="Validation" detail={valDetail}>
+          {checks.map((c, i) => <CheckRow key={i} c={c} />)}
+          {autofixes.length > 0 && (
+            <div style={{ marginTop: 9, fontSize: 11.5, color: '#92400E', background: 'rgba(245,158,11,.08)', border: '1px solid rgba(245,158,11,.22)', borderRadius: 7, padding: '7px 10px', lineHeight: 1.45 }}>
+              Auto-fixed: {autofixes.map(a => typeof a === 'string' ? a : (a.message || a.name || JSON.stringify(a))).join('; ')}
+            </div>
+          )}
+        </PhaseRow>
+        <PhaseRow s={phFore} title="Forecasting" detail={foreDetail} />
+        <PhaseRow s={phSave} title="Predictions saved" detail={saveDetail} />
+      </div>
+
+      {hardStop && (
+        <div style={{ marginTop: 14, padding: '12px 14px', background: 'rgba(220,38,38,.06)', border: '1px solid rgba(220,38,38,.22)', borderRadius: 9 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: '#B91C1C', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 3 }}>{hardStopReason ? 'Hard stop' : 'Pipeline error'}</div>
+          <div style={{ fontSize: 12.5, color: '#7F1D1D', lineHeight: 1.5 }}>{hardStop}</div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+        <div style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {job.job_id ? 'Job ' + String(job.job_id).slice(0, 8) : ''}{job.started_at ? ' · started ' + job.started_at : ''}{step && !done && !failed ? ' · ' + step : ''}
+        </div>
+        {(done || failed) && (
+          <button onClick={onDismiss} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: done ? '#059669' : '#DC2626', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font)', flexShrink: 0 }}>{done ? 'Done' : 'Dismiss'}</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* Upload a monthly ledger -> forecast pipeline (server-side) -> Supabase.
-   Reads window.__UPLOAD_JOB (injected by app.py) to show the live state. */
+   Reads window.__UPLOAD_JOB to bootstrap, then JobProgress polls Supabase for
+   the live step-by-step + validation state. */
 function LedgerUpdateCard() {
   const job = (typeof window !== 'undefined' && window.__UPLOAD_JOB) || null;
-  const status = job && job.status;
-  const active = status === 'queued' || status === 'running';
   const [picked, setPicked] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
@@ -174,53 +379,16 @@ function LedgerUpdateCard() {
     try { bridge(new File([new Blob(['x'], { type: 'text/csv' })], '__JOB_CLEAR__' + Date.now() + '.csv', { type: 'text/csv' })); } catch (e) { /* noop */ }
   };
 
+  // Browser-side signal that the pipeline finished, so the host pulls fresh
+  // predictions immediately instead of waiting on the 30s backup poll.
+  const markDone = () => {
+    try { bridge(new File([new Blob(['x'], { type: 'text/csv' })], '__JOB_DONE__' + Date.now() + '.csv', { type: 'text/csv' })); } catch (e) { /* noop */ }
+  };
+
   const wrap = { background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: 24, marginBottom: 20 };
 
-  if (active) {
-    return (
-      <div style={{ ...wrap, borderColor: 'var(--accent-border)', background: 'var(--accent-surface)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'fi-spin .8s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.22-8.56"></path></svg>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--accent)' }}>Updating forecasts{job.year_month ? ' · ' + job.year_month : ''}</div>
-        </div>
-        <div style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.6 }}>
-          {job.current_step || 'Pipeline running…'}<br />
-          The model is retraining on the server — this takes about <b>12–18 minutes</b>. You can keep using the dashboard; it refreshes on its own when the run finishes.
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 8 }}>Job {String(job.job_id || '').slice(0, 8)} · started {job.started_at}</div>
-      </div>
-    );
-  }
-
-  if (status === 'complete') {
-    return (
-      <div style={{ ...wrap, borderColor: 'rgba(5,150,105,.25)', background: 'rgba(5,150,105,.05)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.4"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#047857' }}>Forecasts updated{job.year_month ? ' for ' + job.year_month : ''}</div>
-            <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 2 }}>The dashboard now shows the fresh predictions from the retrained model.</div>
-          </div>
-          <button onClick={dismiss} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#059669', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font)' }}>Done</button>
-        </div>
-      </div>
-    );
-  }
-
-  if (status === 'failed') {
-    return (
-      <div style={{ ...wrap, borderColor: 'rgba(220,38,38,.25)', background: 'rgba(220,38,38,.05)' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2.2" style={{ flexShrink: 0, marginTop: 2 }}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#B91C1C' }}>Pipeline failed</div>
-            <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 2, lineHeight: 1.5 }}>{job.error_message || 'The forecast pipeline reported an error. Check the ledger format and try again.'}</div>
-          </div>
-          <button onClick={dismiss} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#DC2626', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font)' }}>Dismiss</button>
-        </div>
-      </div>
-    );
-  }
+  // Any queued / running / finished job -> the live step-by-step panel.
+  if (job && job.job_id) return <JobProgress job={job} onDismiss={dismiss} onDone={markDone} />;
 
   return (
     <div style={wrap}>
