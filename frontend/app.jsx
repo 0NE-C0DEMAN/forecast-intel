@@ -51,7 +51,7 @@ function PeriodSelector({ value, onChange, options }) {
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform .15s', transform: open ? 'rotate(180deg)' : 'none', flexShrink: 0 }}><polyline points="6 9 12 15 18 9"></polyline></svg>
         </button>
         {open && <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.08)', maxHeight: 280, overflow: 'auto', zIndex: 100, minWidth: 160 }}>
-          {options.map(p => (
+          {options.slice().reverse().map(p => (
             <button key={p} onClick={() => { onChange(p); setOpen(false); }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', border: 'none', background: value === p ? 'var(--accent-surface)' : 'transparent', color: value === p ? 'var(--accent)' : 'var(--text-2)', cursor: 'pointer', fontSize: 12, fontWeight: value === p ? 700 : 500, fontFamily: 'var(--font)' }}
               onMouseEnter={e => { if (value !== p) e.currentTarget.style.background = 'var(--hover)'; }}
               onMouseLeave={e => { if (value !== p) e.currentTarget.style.background = 'transparent'; }}>{fmt(p)}</button>

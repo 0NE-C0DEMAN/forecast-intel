@@ -180,6 +180,7 @@ function JobProgress({ job, onDismiss, onDone }) {
   const [jobRow, setJobRow] = React.useState(null);
   const [val, setVal] = React.useState(null);
   const firedDone = React.useRef(false);
+  const attempts = React.useRef(0);
 
   React.useEffect(() => {
     let alive = true, timer = null;
@@ -193,6 +194,7 @@ function JobProgress({ job, onDismiss, onDone }) {
       } catch (e) { return null; }
     };
     const poll = async () => {
+      attempts.current += 1;
       let jr = null;
       if (job.job_id) {
         const rows = await get('pipeline_jobs?select=*&limit=1&job_id=eq.' + encodeURIComponent(job.job_id));
@@ -213,12 +215,18 @@ function JobProgress({ job, onDismiss, onDone }) {
       if (!alive) return;
       if (jr) setJobRow(jr);
       if (vr) setVal(vr);
-      const st = (jr && jr.status) || job.status;
-      if (st === 'complete' && job.status !== 'complete' && !firedDone.current) {
+      const vFail = vr && String(vr.overall_result || '').toUpperCase() === 'FAIL';
+      const jStatus = (jr && jr.status) || job.status;
+      const isDone = jStatus === 'complete';
+      const isFail = jStatus === 'failed' || vFail;
+      if (isDone && job.status !== 'complete' && !firedDone.current) {
         firedDone.current = true;
         try { onDone && onDone(); } catch (e) { /* noop */ }
       }
-      if (st === 'queued' || st === 'running') timer = setTimeout(poll, 4000);
+      // Keep polling until the outcome is known — a validation hard stop can
+      // write a validation_runs FAIL row with no pipeline_jobs row, so don't
+      // gate on job status alone. Capped so it never spins forever (~26 min).
+      if (!isDone && !isFail && attempts.current < 400) timer = setTimeout(poll, 4000);
     };
     poll();
     return () => { alive = false; if (timer) clearTimeout(timer); };
@@ -335,6 +343,88 @@ function JobProgress({ job, onDismiss, onDone }) {
   );
 }
 
+/* ---- Persistent "last upload failed" banner ------------------------------
+   The live JobProgress panel only exists while a session job is in flight, so
+   a failure would vanish on refresh / in a fresh session / if no one was
+   watching. This reads the latest run straight from Supabase whenever the
+   upload card is idle, and surfaces the pipeline's failure reason so it is
+   always visible in the front end. Dismissals are remembered (localStorage)
+   until a NEWER failure appears. */
+function LatestRunStatus() {
+  const [info, setInfo] = React.useState(null);
+  const [dismissedId, setDismissedId] = React.useState(() => {
+    try { return localStorage.getItem('fi_fail_dismissed') || ''; } catch (e) { return ''; }
+  });
+
+  React.useEffect(() => {
+    let alive = true;
+    const base = window.__SUPABASE_URL, key = window.__SUPABASE_KEY;
+    if (!base || !key) return;
+    const get = async (path) => {
+      try {
+        const r = await fetch(base + '/rest/v1/' + path, { headers: { apikey: key, Authorization: 'Bearer ' + key } });
+        if (!r.ok) return null;
+        return await r.json();
+      } catch (e) { return null; }
+    };
+    (async () => {
+      const [vrRows, pjRows] = await Promise.all([
+        get('validation_runs?select=*&order=upload_timestamp.desc&limit=1'),
+        get('pipeline_jobs?select=*&order=created_at.desc&limit=1'),
+      ]);
+      if (!alive) return;
+      const vr = (vrRows && vrRows[0]) || null;
+      const pj = (pjRows && pjRows[0]) || null;
+      const vrFail = vr && String(vr.overall_result || '').toUpperCase() === 'FAIL' ? vr : null;
+      const vrTime = vrFail ? new Date(vrFail.upload_timestamp).getTime() : -1;
+      const pjTime = pj ? new Date(pj.created_at).getTime() : -1;
+      // Show a failure only if the most recent upload event is a failure — a
+      // newer successful run supersedes (and hides) an older failed one.
+      if (vrFail && vrTime >= pjTime) {
+        const checks = (vrFail.checks_summary || []).filter(c => String(c.status || '').toUpperCase() === 'FAIL');
+        setInfo({ id: 'v' + vrFail.id, ym: vrFail.year_month, reason: vrFail.hard_stop_reason || 'Validation did not pass.', checks });
+      } else if (pj && pj.status === 'failed') {
+        setInfo({ id: 'j' + (pj.job_id || pj.id), ym: pj.year_month, reason: pj.error_message || 'The pipeline reported an error.', checks: [] });
+      } else {
+        setInfo(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  if (!info || info.id === dismissedId) return null;
+
+  const dismiss = () => {
+    try { localStorage.setItem('fi_fail_dismissed', info.id); } catch (e) { /* noop */ }
+    setDismissedId(info.id);
+  };
+
+  return (
+    <div style={{ border: '1px solid rgba(220,38,38,.26)', background: 'rgba(220,38,38,.04)', borderRadius: 12, padding: 20, marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+        <PhIcon s="fail" big />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: '#B91C1C' }}>Last upload failed{info.ym ? ' · ' + info.ym : ''}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 1, lineHeight: 1.5 }}>The most recent ledger upload did not complete. The pipeline’s reason is below.</div>
+        </div>
+      </div>
+      <div style={{ padding: '12px 14px', background: 'rgba(220,38,38,.06)', border: '1px solid rgba(220,38,38,.22)', borderRadius: 9 }}>
+        <div style={{ fontSize: 10.5, fontWeight: 800, color: '#B91C1C', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 3 }}>Reason</div>
+        <div style={{ fontSize: 12.5, color: '#7F1D1D', lineHeight: 1.5 }}>{info.reason}</div>
+      </div>
+      {info.checks.length > 0 && (
+        <div style={{ marginTop: 10, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '4px 16px 12px' }}>
+          {info.checks.map((c, i) => <CheckRow key={i} c={c} />)}
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
+        <div style={{ flex: 1, fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>Fix the issue above and upload the month again, or contact the system administrator if it needs a reset.</div>
+        <button onClick={dismiss} style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid #CBD0D8', background: '#fff', color: 'var(--text)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)', flexShrink: 0 }}>Dismiss</button>
+      </div>
+    </div>
+  );
+}
+
 /* Upload a monthly ledger -> forecast pipeline (server-side) -> Supabase.
    Reads window.__UPLOAD_JOB to bootstrap, then JobProgress polls Supabase for
    the live step-by-step + validation state. */
@@ -391,7 +481,9 @@ function LedgerUpdateCard() {
   if (job && job.job_id) return <JobProgress job={job} onDismiss={dismiss} onDone={markDone} />;
 
   return (
-    <div style={wrap}>
+    <React.Fragment>
+      <LatestRunStatus />
+      <div style={wrap}>
       <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>Update forecasts with a new month</div>
       <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 16, lineHeight: 1.6 }}>
         Upload the monthly stock ledger exactly as the system exports it — it goes straight to the forecasting pipeline, which validates and processes it and writes fresh predictions. The dashboard updates on its own when it finishes (about 12–18 minutes).
@@ -417,7 +509,8 @@ function LedgerUpdateCard() {
       <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 14, lineHeight: 1.55 }}>
         Upload the stock ledger export exactly as the system produces it (.xlsx) — no reformatting needed. The pipeline parses and validates it. One month per file; the month is detected from the dates.
       </div>
-    </div>
+      </div>
+    </React.Fragment>
   );
 }
 
