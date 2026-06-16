@@ -1664,8 +1664,8 @@ if upload is not None:
     elif upload.name.startswith("__JOB_DONE__"):
         # The browser-side progress poller saw the pipeline finish. Pull the
         # fresh predictions in now and flip the job to complete so the success
-        # state shows on this same rerun, instead of waiting on the 30s backup
-        # poll below. Guard on file_id so it only reloads once per signal.
+        # state shows on this same rerun. Guard on file_id so it only reloads
+        # once per signal.
         fid = getattr(upload, "file_id", None)
         if st.session_state.get("_jobdone_fid") != fid:
             st.session_state["_jobdone_fid"] = fid
@@ -1695,37 +1695,15 @@ html_doc = build_html(
 )
 components_html(html_doc, height=1100, scrolling=True)
 
-# ---------------------------------------------------------------------------
-# Poll an in-flight pipeline job. The fragment reruns on its own every 30s
-# WITHOUT re-rendering the dashboard iframe (so the 12-18 min wait isn't a
-# flicker-fest); only when the job finishes does it reload Supabase and do a
-# single full rerun so the fresh predictions appear.
-# ---------------------------------------------------------------------------
-_job = st.session_state.get("upload_job")
-if _job and _job.get("status") in ("queued", "running") and all(_tecscon_creds()):
-
-    @st.fragment(run_every="30s")
-    def _poll_upload_job():
-        j = st.session_state.get("upload_job")
-        if not j or j.get("status") not in ("queued", "running"):
-            return
-        a_url, a_key = _tecscon_creds()
-        try:
-            s = _api_job_status(j["job_id"], a_url, a_key)
-        except Exception:
-            return  # transient network error — try again on the next tick
-        if not s:
-            return
-        j["status"] = s.get("status", j["status"])
-        j["current_step"] = s.get("current_step")
-        j["error_message"] = s.get("error_message")
-        j["year_month"] = s.get("year_month", j.get("year_month"))
-        st.session_state.upload_job = j
-        if j["status"] == "complete":
-            _reload_all_from_supabase()
-            st.rerun()
-        elif j["status"] == "failed":
-            st.session_state.last_error = "Forecast pipeline failed: " + (j.get("error_message") or "unknown error")
-            st.rerun()
-
-    _poll_upload_job()
+# In-flight pipeline jobs are polled entirely in the browser (JobProgress in
+# upload.jsx): it reads pipeline_jobs / validation_runs from Supabase to show
+# live step-by-step progress, and on completion signals the host via
+# __JOB_DONE__ (handled above) to pull the fresh predictions. It is bounded by
+# a max-attempt cap, so it can't run forever.
+#
+# There is deliberately NO server-side `st.fragment(run_every="30s")` poller.
+# A run_every fragment makes the browser keep requesting reruns for the whole
+# life of the tab; if the Azure job-status call ever stops resolving (e.g. an
+# old job_id), the job stays "queued", the fragment never unregisters, and it
+# spams reruns + "fragment does not exist" warnings indefinitely (it did, for
+# days). The capped browser-side poller replaces it.
