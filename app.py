@@ -79,9 +79,16 @@ _LOGIN_HTML = r"""<!DOCTYPE html>
   } catch (e) {}
 })();
 </script>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<!-- Pin EXACT versions. These are loaded unbundled from the CDN, so an
+     unpinned tag silently upgrades whenever the CDN publishes a new release.
+     Babel 8 / latest defaults JSX to the automatic runtime, which emits
+     `import {jsx} from "react/jsx-runtime"` — fatal here because every .jsx is
+     compiled as a classic (non-module) script sharing one global scope, so an
+     `import` throws "Cannot use import statement outside a module" and nothing
+     renders. 7.29.0 keeps the classic React.createElement output. -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
 <style>
   :root {
     --accent: #4F46E5;

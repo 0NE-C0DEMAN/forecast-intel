@@ -1,4 +1,8 @@
-streamlit>=1.36
+# Pinned: Streamlit Cloud installs the LATEST that satisfies the spec on every
+# rebuild. An unpinned floor let it drift onto a build that deprecates
+# st.components.v1.html (the whole dashboard is rendered through it), so lock a
+# known-good version and upgrade deliberately.
+streamlit==1.56.0
 pandas>=2.0
 openpyxl>=3.1
 plotly>=5.20
