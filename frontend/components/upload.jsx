@@ -142,19 +142,26 @@ function PhIcon({ s, sm, big }) {
   if (s === 'running') return (<svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.6" strokeLinecap="round" style={{ animation: 'fi-spin .8s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.22-8.56"></path></svg>);
   if (s === 'pass') return (<span style={{ ...ring, background: '#059669' }}><svg width={Math.round(sz * 0.6)} height={Math.round(sz * 0.6)} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>);
   if (s === 'fail') return (<span style={{ ...ring, background: '#DC2626' }}><svg width={Math.round(sz * 0.52)} height={Math.round(sz * 0.52)} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></span>);
+  if (s === 'warn') return (<span style={{ ...ring, background: '#D97706' }}><svg width={Math.round(sz * 0.5)} height={Math.round(sz * 0.5)} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round"><line x1="12" y1="6" x2="12" y2="13"></line><line x1="12" y1="17.5" x2="12" y2="17.5"></line></svg></span>);
   if (s === 'skip') return (<span style={{ ...ring, background: '#E5E7EB' }}><svg width={Math.round(sz * 0.5)} height={Math.round(sz * 0.5)} viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="3" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg></span>);
   return (<span style={{ ...ring, border: '2px solid #D1D5DB' }}></span>);
 }
 
 function CheckRow({ c }) {
-  const pass = String(c.status || '').toUpperCase() === 'PASS';
+  // The pipeline emits PASS / WARNING / FAIL. WARNING = non-blocking (auto-fixed
+  // or flagged for review) — the run still succeeds, so show it amber, not red.
+  const s = String(c.status || '').toUpperCase();
+  const kind = s === 'PASS' ? 'pass' : s === 'FAIL' ? 'fail' : 'warn';
+  const nameColor = kind === 'fail' ? '#B91C1C' : kind === 'warn' ? '#92400E' : 'var(--text)';
+  const tagColor = kind === 'fail' ? '#DC2626' : kind === 'warn' ? '#B45309' : '#059669';
+  const tag = kind === 'fail' ? 'FAIL' : kind === 'warn' ? 'WARNING' : 'PASS';
   return (
     <div style={{ display: 'flex', gap: 8, marginTop: 9, alignItems: 'flex-start' }}>
-      <div style={{ marginTop: 1 }}><PhIcon s={pass ? 'pass' : 'fail'} sm /></div>
+      <div style={{ marginTop: 1 }}><PhIcon s={kind} sm /></div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 600, color: pass ? 'var(--text)' : '#B91C1C' }}>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: nameColor }}>
           {c.name}
-          <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, letterSpacing: '.04em', color: pass ? '#059669' : '#DC2626' }}>{pass ? 'PASS' : 'FAIL'}</span>
+          <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, letterSpacing: '.04em', color: tagColor }}>{tag}</span>
         </div>
         {c.message && <div style={{ fontSize: 11.5, color: 'var(--text-2)', marginTop: 1, lineHeight: 1.45 }}>{c.message}</div>}
       </div>
@@ -237,6 +244,11 @@ function JobProgress({ job, onDismiss, onDone }) {
   const checksRaw = (val && val.checks_summary) || [];
   const checks = checksRaw.slice().sort((a, b) => (a.check_id || 0) - (b.check_id || 0));
   const overall = val && String(val.overall_result || '').toUpperCase();
+  // The pipeline marks non-blocking checks WARNING and the run PASS_WITH_WARNINGS
+  // — anything starting with PASS is a success, not a failure.
+  const overallPass = !!overall && overall.indexOf('PASS') === 0;
+  const passCount = checks.filter(c => String(c.status || '').toUpperCase() === 'PASS').length;
+  const warnCount = checks.filter(c => { const s = String(c.status || '').toUpperCase(); return s !== 'PASS' && s !== 'FAIL'; }).length;
   const autofixes = (val && val.auto_fixes_applied) || [];
   const hardStopReason = val && val.hard_stop_reason;
   const hardStop = hardStopReason || (status === 'failed' ? ((jobRow && jobRow.error_message) || job.error_message) : null);
@@ -256,7 +268,7 @@ function JobProgress({ job, onDismiss, onDone }) {
     : /valid|pars|read|check|load|struct/.test(t) ? 'validate'
     : null;
 
-  const valPassed = overall === 'PASS' || (!val && (done || !!frId || stage === 'forecast' || stage === 'save'));
+  const valPassed = overallPass || done || !!frId || stage === 'forecast' || stage === 'save';
   const phUpload = 'pass';
   const phVal = overall === 'FAIL' ? 'fail'
     : valPassed ? 'pass'
@@ -281,7 +293,7 @@ function JobProgress({ job, onDismiss, onDone }) {
   };
 
   const valDetail = phVal === 'running' ? ((stage === 'validate' && step) ? step : 'Running the file & data checks…')
-    : phVal === 'pass' ? (checks.length ? checks.length + ' checks passed' : 'All checks passed')
+    : phVal === 'pass' ? (warnCount > 0 ? `${passCount} passed · ${warnCount} warning${warnCount > 1 ? 's' : ''} (auto-handled)` : 'All checks passed')
     : overall === 'FAIL' ? 'Stopped on a failing check'
     : 'Did not complete';
   const foreDetail = phFore === 'running' ? ((stage === 'forecast' && step) ? step : 'Retraining the model and generating the new forecast…')
@@ -303,7 +315,7 @@ function JobProgress({ job, onDismiss, onDone }) {
             {done ? 'Forecasts updated' : failed ? 'Pipeline stopped' : 'Updating forecasts'}{ym ? ' · ' + ym : ''}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 1, lineHeight: 1.5 }}>
-            {done ? 'Fresh predictions are now live on the dashboard.'
+            {done ? (warnCount > 0 ? `Fresh predictions are live · ${warnCount} check${warnCount > 1 ? 's' : ''} raised warnings (auto-handled), see below.` : 'Fresh predictions are now live on the dashboard.')
               : failed ? (overall === 'FAIL' ? 'A validation check did not pass — see the details below.' : 'The pipeline reported an error — see the details below.')
               : 'Validating and retraining on the server — about 12–18 minutes. You can keep using the dashboard.'}
           </div>
