@@ -147,6 +147,7 @@ function App() {
     : page === 'accuracy' ? 'Model Accuracy'
     : page === 'explorer' ? 'Item Explorer'
     : page === 'newitems' ? 'New Items'
+    : page === 'dormant' ? 'Dormant Items'
     : page === 'iteminsight' ? 'Item Insights'
     : page === 'forecasts' ? 'Item Forecasts'
     : 'Upload Data';
@@ -250,6 +251,7 @@ function App() {
           {page === 'accuracy' && <div style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: '14px 20px 20px' }}><AccuracyTab periodGroups={periodGroups} allData={data} metric={errorMetric} /></div>}
           {page === 'explorer' && <ItemExplorerPage allData={data} period={activePeriod} mode={explorerMode} />}
           {page === 'newitems' && <NewItemsPage allData={data} />}
+          {page === 'dormant' && <DormantItemsPage allData={data} />}
           {page === 'iteminsight' && <ItemInsightPage allData={data} />}
           {page === 'forecasts' && <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '14px 20px 0' }}><ItemForecastsGrid allData={data || []} /></div>}
           {page === 'upload' && <div style={{ padding: 24, overflow: 'auto' }}><UploadDataPage onOpenDataSource={() => setDsOpen(true)} /></div>}
