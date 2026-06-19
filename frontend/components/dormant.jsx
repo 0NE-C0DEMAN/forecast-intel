@@ -72,6 +72,7 @@ function DormantItemsPage({ allData }) {
   const [sort2, setSort2] = React.useState('months');
   const [info1, setInfo1] = React.useState(false);
   const [info2, setInfo2] = React.useState(false);
+  const [hvOnly, setHvOnly] = React.useState(false);
   const [itemSel, setItemSel] = React.useState(null);
 
   const itemDetail = React.useMemo(() => {
@@ -93,6 +94,10 @@ function DormantItemsPage({ allData }) {
     else a.sort((x, y) => y.months - x.months || (x.desc || '').localeCompare(y.desc || ''));
     return a;
   };
+
+  // HV-only toggle filters both sections (and their counts).
+  const zeroView = hvOnly ? zeroTxn.filter(x => x.isHV) : zeroTxn;
+  const constView = hvOnly ? constCount.filter(x => x.isHV) : constCount;
 
   // Sparkline of the item's balance over its whole history, with the dormant
   // stretch shaded + drawn in amber. Flat amber line = a year-long plateau.
@@ -196,18 +201,24 @@ function DormantItemsPage({ allData }) {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '14px 24px 0', minHeight: 0 }}>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flexShrink: 0, marginBottom: 8 }}>
-        {[
-          { label: 'No transactions ≥ 1yr', value: zeroTxn.length, sub: 'items idle 12+ months' },
-          { label: 'Constant count ≥ 1yr', value: constCount.length, sub: 'balance unchanged 12+ months' },
-          { label: 'Observed window', value: `${fmtShort(meta.firstActual)} → ${fmtShort(meta.latestActual)}`, sub: 'from actual movements' },
-        ].map(c => (
-          <div key={c.label} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 16px', minWidth: 132 }}>
-            <div style={{ fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', color: 'var(--text)', lineHeight: 1.1 }}>{c.value}</div>
-            <div style={{ fontSize: 9, color: 'var(--text-2)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 3 }}>{c.label}</div>
-            <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 1 }}>{c.sub}</div>
-          </div>
-        ))}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', flexShrink: 0, marginBottom: 8 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {[
+            { label: 'No transactions ≥ 1yr', value: zeroView.length, sub: hvOnly ? 'high-value, idle 12+ mo' : 'items idle 12+ months' },
+            { label: 'Constant count ≥ 1yr', value: constView.length, sub: hvOnly ? 'high-value, unchanged 12+ mo' : 'balance unchanged 12+ months' },
+            { label: 'Observed window', value: `${fmtShort(meta.firstActual)} → ${fmtShort(meta.latestActual)}`, sub: 'from actual movements' },
+          ].map(c => (
+            <div key={c.label} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 16px', minWidth: 132 }}>
+              <div style={{ fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', color: 'var(--text)', lineHeight: 1.1 }}>{c.value}</div>
+              <div style={{ fontSize: 9, color: 'var(--text-2)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 3 }}>{c.label}</div>
+              <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 1 }}>{c.sub}</div>
+            </div>
+          ))}
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', color: hvOnly ? 'var(--accent)' : 'var(--text-2)', padding: '7px 12px', border: '1px solid', borderColor: hvOnly ? 'var(--accent)' : 'var(--border)', borderRadius: 8, background: hvOnly ? 'rgba(79,70,229,.06)' : '#fff', flexShrink: 0, transition: 'all .12s' }}>
+          <input type="checkbox" checked={hvOnly} onChange={e => setHvOnly(e.target.checked)} style={{ accentColor: 'var(--accent)', margin: 0 }} />
+          <span style={{ color: 'var(--accent)' }}>★</span> HV items only
+        </label>
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: 10, lineHeight: 1.45, flexShrink: 0 }}>
         Items that have gone quiet — no movement, or an unchanged count — for a year or more, from actual history. The sparkline traces each item's balance; the <span style={{ color: '#B45309', fontWeight: 600 }}>amber</span> stretch is the dormant window. Click any item for its full history.
@@ -218,14 +229,14 @@ function DormantItemsPage({ allData }) {
           icon: pauseIcon, title: 'No transactions for 12+ months',
           subtitle: 'Zero deliveries or returns — the item just sat in place for a full year or more.',
           info: 'These items recorded no Deliver and no Return for at least 12 consecutive months. They are sitting untouched — candidates to redeploy, sell off, or stop tracking. “Still idle” means the run continues right up to the latest month with actuals; “ended” means activity resumed afterwards.',
-          items: zeroTxn, q: q1, setQ: setQ1, sort: sort1, setSort: setSort1, withHeld: false, showValue: false,
+          items: zeroView, q: q1, setQ: setQ1, sort: sort1, setSort: setSort1, withHeld: false, showValue: false,
           infoOpen: info1, setInfoOpen: setInfo1,
         })}
         {panel({
           icon: flatIcon, title: 'Constant count for 12+ months',
           subtitle: 'On-hand closing balance never changed for a full year or more.',
           info: 'These items held the exact same closing balance for at least 12 consecutive months (the held quantity is shown on each row). A flat count means stock that never moved in or out — often the same items, seen from the balance side rather than the transaction side.',
-          items: constCount, q: q2, setQ: setQ2, sort: sort2, setSort: setSort2, withHeld: true, showValue: true,
+          items: constView, q: q2, setQ: setQ2, sort: sort2, setSort: setSort2, withHeld: true, showValue: true,
           infoOpen: info2, setInfoOpen: setInfo2,
         })}
       </div>
