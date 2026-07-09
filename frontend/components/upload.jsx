@@ -1,21 +1,39 @@
 /* Upload Data page */
 
 function UploadDataPage({ onOpenDataSource }) {
-  const expectedCols = ['Item Code', 'Item Description', 'Is HV', 'Tier', 'Period', 'Prev Closing Balance', 'Predicted Closing Bal', 'Actual Closing Bal', 'Difference', 'Predicted Action', 'Actual Action', 'Direction Correct', 'Quantity', 'Item MAPE (%)'];
   const sourceLabel = (typeof window !== 'undefined' && window.__SOURCE_LABEL) || 'Bundled · Re_Forecast_2026_JanFeb_train24_25.xlsx';
+  const job = (typeof window !== 'undefined' && window.__UPLOAD_JOB) || null;
+  const hasJob = !!(job && job.job_id);
+  const [mode, setMode] = React.useState('consolidate');
 
   return (
     <div style={{ maxWidth: 700 }}>
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 18 }}>
         <h2 style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 4 }}>Upload Data</h2>
         <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
-          Refresh the forecast with a new month. If your ledger arrives as several company files, consolidate them first — the server merges and processes them together. Already have a single file? Use the second card.
+          Refresh the forecast with a new month. Switch between consolidating several company files (the server merges them) and uploading a single ready ledger.
         </div>
       </div>
 
-      {/* Multi-company consolidate (server merges), then the single-file flow */}
-      <ConsolidateCard />
-      <LedgerUpdateCard />
+      {/* A job in flight takes over the whole area; otherwise a toggle picks the
+          upload mode (consolidate multiple company files vs a single file). */}
+      {hasJob ? (
+        <LedgerUpdateCard />
+      ) : (
+        <React.Fragment>
+          <LatestRunStatus />
+          <div style={{ display: 'inline-flex', gap: 3, padding: 4, background: 'var(--surface-2,#F3F4F7)', borderRadius: 10, marginBottom: 18 }}>
+            {[['consolidate', 'Consolidate company files'], ['single', 'Single file']].map(([m, label]) => (
+              <button key={m} onClick={() => setMode(m)} style={{
+                padding: '8px 16px', fontSize: 12.5, fontWeight: mode === m ? 700 : 600, border: 'none', borderRadius: 7, cursor: 'pointer', fontFamily: 'var(--font)',
+                background: mode === m ? '#fff' : 'transparent', color: mode === m ? 'var(--accent)' : 'var(--text-2)',
+                boxShadow: mode === m ? '0 1px 3px rgba(0,0,0,.08)' : 'none', transition: 'all .12s',
+              }}>{label}</button>
+            ))}
+          </div>
+          {mode === 'consolidate' ? <ConsolidateCard /> : <LedgerUpdateCard />}
+        </React.Fragment>
+      )}
 
       {/* Current source info */}
       <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -633,9 +651,7 @@ function LedgerUpdateCard() {
   if (job && job.job_id) return <JobProgress job={job} onDismiss={dismiss} onDone={markDone} />;
 
   return (
-    <React.Fragment>
-      <LatestRunStatus />
-      <div style={wrap}>
+    <div style={wrap}>
       <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>Update forecasts with a new month</div>
       <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 16, lineHeight: 1.6 }}>
         Upload the monthly stock ledger exactly as the system exports it — it goes straight to the forecasting pipeline, which validates and processes it and writes fresh predictions. The dashboard updates on its own when it finishes (about 12–18 minutes).
@@ -661,8 +677,7 @@ function LedgerUpdateCard() {
       <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 14, lineHeight: 1.55 }}>
         Upload the stock ledger export exactly as the system produces it (.xlsx) — no reformatting needed. The pipeline parses and validates it. One month per file; the month is detected from the dates.
       </div>
-      </div>
-    </React.Fragment>
+    </div>
   );
 }
 
