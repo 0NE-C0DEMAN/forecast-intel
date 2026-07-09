@@ -9,11 +9,12 @@ function UploadDataPage({ onOpenDataSource }) {
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 4 }}>Upload Data</h2>
         <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
-          Upload the monthly stock ledger export — it goes straight to the forecasting pipeline, which validates it and refreshes the predictions.
+          Refresh the forecast with a new month. If your ledger arrives as several company files, consolidate them first — the server merges and processes them together. Already have a single file? Use the second card.
         </div>
       </div>
 
-      {/* Update forecasts via the pipeline API (the main flow) */}
+      {/* Multi-company consolidate (server merges), then the single-file flow */}
+      <ConsolidateCard />
       <LedgerUpdateCard />
 
       {/* Current source info */}
@@ -305,6 +306,8 @@ function JobProgress({ job, onDismiss, onDone }) {
   const saveDetail = phSave === 'pass' ? (saveClean || 'Predictions written to the database')
     : phSave === 'running' ? (step || 'Saving predictions…')
     : phSave === 'skip' ? 'Not run' : '—';
+  // Multi-company merge summary (present only when several files were consolidated).
+  const mr = job.merge_report || null;
 
   return (
     <div style={wrap}>
@@ -321,6 +324,47 @@ function JobProgress({ job, onDismiss, onDone }) {
           </div>
         </div>
       </div>
+
+      {mr && (
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '11px 16px 12px', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ width: 22, height: 22, borderRadius: 6, background: 'var(--accent-surface)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+            </span>
+            <div style={{ fontSize: 12.5, fontWeight: 700, flex: 1, minWidth: 0 }}>Consolidated {((mr.files || []).length) || (mr.companies_detected || []).length || 0} file{(((mr.files || []).length) === 1) ? '' : 's'}</div>
+            {mr.total_rows_merged != null && <span style={{ fontSize: 11.5, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--accent)' }}>{Number(mr.total_rows_merged).toLocaleString()} rows</span>}
+          </div>
+          {(mr.companies_detected || []).length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+              {mr.companies_detected.map((c, i) => (
+                <span key={i} style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-surface)', border: '1px solid var(--accent-border)', padding: '2px 9px', borderRadius: 10, letterSpacing: '.02em' }}>{c}</span>
+              ))}
+            </div>
+          )}
+          {(mr.files || []).map((f, i) => {
+            const s = String(f.status || '').toLowerCase();
+            const ok = s === 'ok' || s === 'merged' || s === 'success' || s.indexOf('ok') === 0;
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: i ? '1px solid #F3F4F6' : 'none' }}>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.filename}>{f.filename}</span>
+                {f.company && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)', fontFamily: 'var(--mono)' }}>{f.company}</span>}
+                {f.rows != null && <span style={{ fontSize: 10.5, color: 'var(--text-3)', fontFamily: 'var(--mono)', minWidth: 56, textAlign: 'right' }}>{Number(f.rows).toLocaleString()} rows</span>}
+                {f.status && <span style={{ fontSize: 9.5, fontWeight: 700, color: ok ? '#059669' : '#B45309', background: ok ? 'rgba(5,150,105,.1)' : 'rgba(217,119,6,.12)', padding: '1px 7px', borderRadius: 9, whiteSpace: 'nowrap' }}>{f.status}</span>}
+              </div>
+            );
+          })}
+          {(mr.item_names_not_in_map || []).length > 0 && (
+            <div style={{ marginTop: 8, fontSize: 11, color: '#92400E', background: 'rgba(245,158,11,.08)', border: '1px solid rgba(245,158,11,.22)', borderRadius: 7, padding: '7px 10px', lineHeight: 1.45 }}>
+              {mr.item_names_not_in_map.length} item name{mr.item_names_not_in_map.length === 1 ? '' : 's'} weren't in the code map (code left blank): {mr.item_names_not_in_map.slice(0, 8).join(', ')}{mr.item_names_not_in_map.length > 8 ? ` +${mr.item_names_not_in_map.length - 8} more` : ''}
+            </div>
+          )}
+          {(mr.warnings || []).length > 0 && (
+            <div style={{ marginTop: 8, fontSize: 11, color: '#92400E', background: 'rgba(245,158,11,.08)', border: '1px solid rgba(245,158,11,.22)', borderRadius: 7, padding: '7px 10px', lineHeight: 1.45 }}>
+              {mr.warnings.map((w, i) => <div key={i}>{typeof w === 'string' ? w : (w.message || JSON.stringify(w))}</div>)}
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '6px 16px' }}>
         <PhaseRow s={phUpload} title="Upload received" detail={'Ledger handed to the pipeline' + (ym ? ' · ' + ym : '')} />
@@ -437,6 +481,102 @@ function LatestRunStatus() {
   );
 }
 
+/* Consolidate several company ledgers (C20/C30/C50…) into one via the server.
+   Files go to the dedicated multi-file bridge; the server merges + processes
+   them in a single request. Hidden while a job is in flight — the shared
+   JobProgress panel (from LedgerUpdateCard) takes over and shows the merge
+   report. */
+function ConsolidateCard() {
+  const job = (typeof window !== 'undefined' && window.__UPLOAD_JOB) || null;
+  const [files, setFiles] = React.useState([]);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState('');
+  const fileRef = React.useRef(null);
+
+  if (job && job.job_id) return null; // a run is active — JobProgress shows instead
+
+  // Drop the picked files onto the dedicated multi-file uploader in the host.
+  const submit = (fileList) => {
+    const pd = window.parent.document;
+    const input = pd.querySelector('.st-key-consolidate_bridge input[type="file"]')
+      || pd.querySelector('.st-key-consolidate_bridge [data-testid="stFileUploaderDropzoneInput"]');
+    if (!input) throw new Error('Consolidation uploader not found. Reload the page and try again.');
+    const dt = new DataTransfer();
+    fileList.forEach(f => dt.items.add(f));
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files').set;
+    setter.call(input, dt.files);
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  const addFiles = (list) => {
+    const incoming = Array.from(list || []).filter(f => /\.xlsx$/i.test(f.name));
+    if (!incoming.length) { setErr('Only .xlsx files are accepted.'); return; }
+    for (const f of incoming) { if (f.size > 50 * 1024 * 1024) { setErr(f.name + ' exceeds the 50 MB limit.'); return; } }
+    setErr('');
+    setFiles(prev => {
+      const seen = new Set(prev.map(f => f.name + '|' + f.size));
+      const out = prev.slice();
+      incoming.forEach(f => { const k = f.name + '|' + f.size; if (!seen.has(k)) { seen.add(k); out.push(f); } });
+      return out;
+    });
+  };
+  const removeAt = (i) => setFiles(prev => prev.filter((_, k) => k !== i));
+
+  const start = () => {
+    if (!files.length) return;
+    setBusy(true); setErr('');
+    try { submit(files); }
+    catch (e) { setBusy(false); setErr(e.message || String(e)); }
+  };
+
+  const wrap = { background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: 24, marginBottom: 20 };
+  return (
+    <div style={wrap}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <span style={{ width: 24, height: 24, borderRadius: 7, background: 'var(--accent-surface)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+        </span>
+        <div style={{ fontSize: 15, fontWeight: 800 }}>Consolidate company ledgers</div>
+      </div>
+      <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 16, lineHeight: 1.6 }}>
+        Add the separate company ledger files (e.g. C20, C30, C50). The server detects each company, merges them into one, then validates and processes the result — no need to combine them by hand first.
+      </div>
+      <div onClick={() => fileRef.current && fileRef.current.click()}
+        onDragOver={e => e.preventDefault()}
+        onDrop={e => { e.preventDefault(); addFiles(e.dataTransfer.files); }}
+        style={{ border: '2px dashed #C4C9D2', borderRadius: 12, padding: '22px 20px', textAlign: 'center', cursor: 'pointer', background: '#FAFBFC' }}>
+        <input type="file" ref={fileRef} accept=".xlsx" multiple style={{ display: 'none' }} onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Click to add company files</span>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>.xlsx · drag &amp; drop or click</span>
+        </div>
+      </div>
+      {files.length > 0 && (
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {files.map((f, i) => (
+            <div key={f.name + i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--accent-surface)', borderRadius: 8, border: '1px solid var(--accent-border)' }}>
+              <span style={{ fontSize: 10, fontWeight: 800, fontFamily: 'var(--mono)', color: 'var(--accent)', flexShrink: 0, width: 14, textAlign: 'center' }}>{i + 1}</span>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: 'var(--accent)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.name}>{f.name}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-3)', flexShrink: 0 }}>{Math.round(f.size / 1024)} KB</span>
+              <button onClick={() => removeAt(i)} disabled={busy} title="Remove" style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 6, border: '1px solid var(--border)', background: '#fff', color: 'var(--text-2)', fontSize: 14, lineHeight: 1, cursor: 'pointer', fontFamily: 'var(--font)' }}>×</button>
+            </div>
+          ))}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+            <span style={{ flex: 1, fontSize: 11, color: 'var(--text-3)' }}>{files.length} file{files.length > 1 ? 's' : ''} ready{files.length > 1 ? ' — will be merged' : ''}</span>
+            <button onClick={() => setFiles([])} disabled={busy} style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--text-2)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)' }}>Clear</button>
+            <button onClick={start} disabled={busy} style={{ padding: '7px 16px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1, fontFamily: 'var(--font)' }}>{busy ? 'Consolidating…' : (files.length > 1 ? 'Consolidate & process' : 'Process file')}</button>
+          </div>
+        </div>
+      )}
+      {err && <div style={{ marginTop: 10, fontSize: 12, color: '#DC2626', fontWeight: 600 }}>{err}</div>}
+      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 14, lineHeight: 1.55 }}>
+        Send the raw company exports as-is. The server merges, validates, and trains in one step (about 12–18 minutes) — you'll see a merge summary and live progress below.
+      </div>
+    </div>
+  );
+}
+
 /* Upload a monthly ledger -> forecast pipeline (server-side) -> Supabase.
    Reads window.__UPLOAD_JOB to bootstrap, then JobProgress polls Supabase for
    the live step-by-step + validation state. */
@@ -526,4 +666,4 @@ function LedgerUpdateCard() {
   );
 }
 
-Object.assign(window, { UploadDataPage, LedgerUpdateCard });
+Object.assign(window, { UploadDataPage, LedgerUpdateCard, ConsolidateCard });

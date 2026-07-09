@@ -422,7 +422,7 @@ iframe[data-testid="stIFrame"] {
   height: 100vh !important; min-height: 0 !important; max-height: 100vh !important;
 }
 html, body { overflow: hidden !important; height: 100vh !important; }
-.st-key-forecast_bridge {
+.st-key-forecast_bridge, .st-key-consolidate_bridge {
   position: fixed !important; left: -10000px !important; top: 0 !important;
   width: 1px !important; height: 1px !important; overflow: hidden !important;
   pointer-events: none !important; opacity: 0 !important;
@@ -474,7 +474,7 @@ iframe[data-testid="stIFrame"] {
   overflow: hidden !important;
 }
 html, body { overflow: hidden !important; height: 100vh !important; }
-.st-key-forecast_bridge {
+.st-key-forecast_bridge, .st-key-consolidate_bridge {
   position: fixed !important;
   left: -10000px !important; top: 0 !important;
   width: 1px !important; height: 1px !important;
@@ -1064,6 +1064,27 @@ def _api_upload_ledger(file_bytes: bytes, filename: str, url: str, key: str) -> 
     return resp.json()
 
 
+def _api_upload_ledgers(files: list, url: str, key: str) -> tuple:
+    """POST one or more ledger files to /api/process-ledger as repeated `files`
+    fields (the multi-company merge endpoint). One file = processed as-is; two
+    or more = merged server-side first. `files` is a list of (filename, bytes).
+    Returns (status_code, body): the body carries job_id + merge_report on
+    success, or error/detail (+ merge_report) on a 422 rejection."""
+    import requests
+    multipart = [("files", (name or f"ledger_{i}.xlsx", data)) for i, (name, data) in enumerate(files)]
+    resp = requests.post(
+        f"{url}/api/process-ledger",
+        files=multipart,
+        headers={"X-API-Key": key},
+        timeout=120,
+    )
+    try:
+        body = resp.json()
+    except Exception:
+        body = {}
+    return resp.status_code, body
+
+
 def _api_job_status(job_id: str, url: str, key: str) -> dict:
     """GET /api/job-status/{job_id}. Returns the status payload."""
     import requests
@@ -1485,6 +1506,19 @@ with st.container(key="forecast_bridge"):
         key="data_uploader",
     )
 
+# Separate multi-file bridge for the "consolidate company ledgers" flow. React
+# drops the several company files (C20/C30/C50…) here at once; the server merges
+# them. Kept apart from the single-file bridge above so existing flows (login,
+# reset, single ledger) are unaffected.
+with st.container(key="consolidate_bridge"):
+    consolidate_files = st.file_uploader(
+        "consolidate_uploader",
+        type=["xlsx"],
+        accept_multiple_files=True,
+        label_visibility="collapsed",
+        key="consolidate_uploader",
+    )
+
 # ---------------------------------------------------------------------------
 # Handle login attempts BEFORE anything else. Password arrives as the
 # content of a sentinel-named file, never in the filename. We DON'T call
@@ -1680,6 +1714,51 @@ if upload is not None:
     # only upload now is the monthly ledger, which is forwarded raw to the
     # pipeline (handled by the __LEDGER_UPLOAD__ branch above); validation of
     # the ledger format happens on the Azure side.
+
+
+# ---------------------------------------------------------------------------
+# Consolidate multiple company ledgers. Files arrive via the dedicated
+# multi-file bridge (consolidate_uploader). We POST them all in one request as
+# repeated `files`; the server merges (2+) and processes them, returning a
+# merge_report we stash on the job so the progress panel can show it. The job
+# then flows through the same polling / validation display as a single upload.
+# ---------------------------------------------------------------------------
+_consolidate = st.session_state.get("consolidate_uploader")
+if _consolidate:
+    _cfids = tuple(sorted(str(getattr(f, "file_id", "")) for f in _consolidate))
+    if st.session_state.get("_consolidate_fids") != _cfids:
+        st.session_state["_consolidate_fids"] = _cfids  # POST once per selection
+        api_url, api_key = _tecscon_creds()
+        if not (api_url and api_key):
+            seen = [k for k in ("password", "supabase_url", "supabase_key",
+                                "tecscon_api_url", "tecscon_api_key") if k in st.secrets]
+            st.session_state.last_error = (
+                "Upload pipeline isn't configured on this deployment. Secrets this app "
+                "instance can currently see: " + (", ".join(seen) if seen else "none")
+                + ". Add tecscon_api_url / tecscon_api_key to this app's Settings → Secrets."
+            )
+        else:
+            try:
+                _files = [(f.name, f.getvalue()) for f in _consolidate]
+                _status, _body = _api_upload_ledgers(_files, api_url, api_key)
+                if _status < 300 and _body.get("job_id"):
+                    st.session_state.upload_job = {
+                        "job_id": _body.get("job_id"),
+                        "year_month": _body.get("year_month"),
+                        "status": _body.get("status", "queued"),
+                        "current_step": _body.get("message"),
+                        "error_message": None,
+                        "file_name": ", ".join(f.name for f in _consolidate),
+                        "started_at": datetime.now().strftime("%H:%M"),
+                        "started_iso": datetime.now(timezone.utc).isoformat(),
+                        "merge_report": _body.get("merge_report"),
+                    }
+                    st.session_state.last_error = None
+                else:
+                    _detail = _body.get("detail") or _body.get("error") or f"Merge rejected (HTTP {_status})."
+                    st.session_state.last_error = "Consolidation failed: " + str(_detail)
+            except Exception as exc:
+                st.session_state.last_error = f"Could not start the forecast pipeline: {exc}"
 
 
 last_error = st.session_state.last_error
