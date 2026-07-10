@@ -1510,13 +1510,19 @@ with st.container(key="forecast_bridge"):
 # drops the several company files (C20/C30/C50…) here at once; the server merges
 # them. Kept apart from the single-file bridge above so existing flows (login,
 # reset, single ledger) are unaffected.
+# The uploader key is GENERATIONAL: Streamlit's multi-file uploader keeps its
+# files for the whole session and a later programmatic drop APPENDS to the old
+# list, so a second consolidation would resend the previous month's files too —
+# the server then hard-stops with "company appears in two uploaded files".
+# Bumping the generation after each processed batch mounts a fresh, empty
+# uploader, so every request contains exactly the files just picked.
 with st.container(key="consolidate_bridge"):
     consolidate_files = st.file_uploader(
         "consolidate_uploader",
         type=["xlsx"],
         accept_multiple_files=True,
         label_visibility="collapsed",
-        key="consolidate_uploader",
+        key=f"consolidate_uploader_{st.session_state.get('_consolidate_gen', 0)}",
     )
 
 # ---------------------------------------------------------------------------
@@ -1723,11 +1729,14 @@ if upload is not None:
 # merge_report we stash on the job so the progress panel can show it. The job
 # then flows through the same polling / validation display as a single upload.
 # ---------------------------------------------------------------------------
-_consolidate = st.session_state.get("consolidate_uploader")
+_consolidate = consolidate_files
 if _consolidate:
     _cfids = tuple(sorted(str(getattr(f, "file_id", "")) for f in _consolidate))
     if st.session_state.get("_consolidate_fids") != _cfids:
         st.session_state["_consolidate_fids"] = _cfids  # POST once per selection
+        # Retire this uploader generation so the NEXT rerun mounts an empty
+        # one — this batch can never be resent alongside a future month's.
+        st.session_state["_consolidate_gen"] = st.session_state.get("_consolidate_gen", 0) + 1
         api_url, api_key = _tecscon_creds()
         if not (api_url and api_key):
             seen = [k for k in ("password", "supabase_url", "supabase_key",

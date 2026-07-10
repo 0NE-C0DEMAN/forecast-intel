@@ -478,7 +478,7 @@ function LatestRunStatus() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
         <PhIcon s="fail" big />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: '#B91C1C' }}>Last upload failed{info.ym ? ' · ' + info.ym : ''}</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: '#B91C1C' }}>Last upload failed{info.ym && info.ym !== 'unknown' ? ' · ' + info.ym : ''}</div>
           <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 1, lineHeight: 1.5 }}>The most recent ledger upload did not complete. The pipeline’s reason is below.</div>
         </div>
       </div>
