@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 import json
 from datetime import datetime, timezone
@@ -1064,25 +1065,47 @@ def _api_upload_ledger(file_bytes: bytes, filename: str, url: str, key: str) -> 
     return resp.json()
 
 
-def _api_upload_ledgers(files: list, url: str, key: str) -> tuple:
-    """POST one or more ledger files to /api/process-ledger as repeated `files`
-    fields (the multi-company merge endpoint). One file = processed as-is; two
-    or more = merged server-side first. `files` is a list of (filename, bytes).
-    Returns (status_code, body): the body carries job_id + merge_report on
-    success, or error/detail (+ merge_report) on a 422 rejection."""
+def _api_merge_ledgers(files: list, url: str, key: str) -> tuple:
+    """POST company ledgers to /api/merge-ledgers as repeated `files` fields.
+    The server detects each company, merges them into one file, and stores the
+    result server-side (downloadable via /api/download-merged/{year_month}).
+    NO forecast is run — this is the Tab 1 "Merge & Download" step. `files` is a
+    list of (filename, bytes). Returns (status_code, body); body carries
+    status/year_month/merge_report on success or error/detail on rejection."""
     import requests
     multipart = [("files", (name or f"ledger_{i}.xlsx", data)) for i, (name, data) in enumerate(files)]
     resp = requests.post(
-        f"{url}/api/process-ledger",
+        f"{url}/api/merge-ledgers",
         files=multipart,
         headers={"X-API-Key": key},
-        timeout=120,
+        timeout=180,
     )
     try:
         body = resp.json()
     except Exception:
         body = {}
     return resp.status_code, body
+
+
+def _api_download_merged(year_month: str, url: str, key: str) -> tuple:
+    """GET /api/download-merged/{year_month} — the merged xlsx produced by
+    /api/merge-ledgers. Fetched SERVER-SIDE so the API key never reaches the
+    browser; the bytes are then handed to the front end (base64) for a Download
+    button. Returns (bytes, filename). Raises on non-2xx / network error."""
+    import re as _re
+    import requests
+    resp = requests.get(
+        f"{url}/api/download-merged/{year_month}",
+        headers={"X-API-Key": key},
+        timeout=180,
+    )
+    resp.raise_for_status()
+    fname = f"merged_ledger_{year_month}.xlsx"
+    cd = resp.headers.get("Content-Disposition", "") or ""
+    m = _re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd)
+    if m:
+        fname = m.group(1).strip()
+    return resp.content, fname
 
 
 def _api_job_status(job_id: str, url: str, key: str) -> dict:
@@ -1363,6 +1386,7 @@ window.__switchYear = function(year) {
     # — RLS is enforced server-side, the key just identifies the project.
     sb_url, sb_key = _supabase_creds()
     upload_job = st.session_state.get("upload_job")
+    merge_result = st.session_state.get("merge_result")
     fetch_new = (
         f"window.__RAW_DATA = {json_str}; "
         f"window.__MAPE_SUMMARY = {mape_str}; "
@@ -1375,6 +1399,7 @@ window.__switchYear = function(year) {
         f"window.__SUPABASE_URL = {json.dumps(sb_url)}; "
         f"window.__SUPABASE_KEY = {json.dumps(sb_key)}; "
         f"window.__UPLOAD_JOB = {json.dumps(upload_job)}; "
+        f"window.__MERGE_RESULT = {json.dumps(merge_result)}; "
         f"{bridge_js} "
         "setTimeout(() => window.dispatchEvent(new Event('dataready')), 0);"
     )
@@ -1684,6 +1709,8 @@ if upload is not None:
                 orig = upload.name[len("__LEDGER_UPLOAD__"):].strip() or "ledger.xlsx"
                 try:
                     res = _api_upload_ledger(upload.getvalue(), orig, api_url, api_key)
+                    # A fresh forecast supersedes any lingering Tab 1 merge card.
+                    st.session_state.pop("merge_result", None)
                     st.session_state.upload_job = {
                         "job_id": res.get("job_id"),
                         "year_month": res.get("year_month"),
@@ -1702,6 +1729,10 @@ if upload is not None:
                     st.session_state.last_error = f"Could not start the forecast pipeline: {exc}"
     elif upload.name.startswith("__JOB_CLEAR__"):
         st.session_state.pop("upload_job", None)
+    elif upload.name.startswith("__MERGE_CLEAR__"):
+        # Tab 1 "Merge & Download" — user dismissed the merge result / wants to
+        # merge a different set of files. Drop the stored merged file + report.
+        st.session_state.pop("merge_result", None)
     elif upload.name.startswith("__JOB_DONE__"):
         # The browser-side progress poller saw the pipeline finish. Pull the
         # fresh predictions in now and flip the job to complete so the success
@@ -1723,11 +1754,14 @@ if upload is not None:
 
 
 # ---------------------------------------------------------------------------
-# Consolidate multiple company ledgers. Files arrive via the dedicated
-# multi-file bridge (consolidate_uploader). We POST them all in one request as
-# repeated `files`; the server merges (2+) and processes them, returning a
-# merge_report we stash on the job so the progress panel can show it. The job
-# then flows through the same polling / validation display as a single upload.
+# Tab 1 "Merge & Download". Company files arrive via the dedicated multi-file
+# bridge (consolidate_uploader). We POST them all to /api/merge-ledgers in one
+# request; the server detects each company and merges them into one file (NO
+# forecast). On success we immediately pull the merged file down server-side
+# (so the API key never reaches the browser) and hand it to the front end as
+# base64 for a Download button. The merge_report + merged file live in
+# st.session_state["merge_result"] until the user dismisses it (__MERGE_CLEAR__)
+# or starts a forecast in Tab 2.
 # ---------------------------------------------------------------------------
 _consolidate = consolidate_files
 if _consolidate:
@@ -1741,33 +1775,55 @@ if _consolidate:
         if not (api_url and api_key):
             seen = [k for k in ("password", "supabase_url", "supabase_key",
                                 "tecscon_api_url", "tecscon_api_key") if k in st.secrets]
-            st.session_state.last_error = (
-                "Upload pipeline isn't configured on this deployment. Secrets this app "
-                "instance can currently see: " + (", ".join(seen) if seen else "none")
-                + ". Add tecscon_api_url / tecscon_api_key to this app's Settings → Secrets."
-            )
+            st.session_state.merge_result = {
+                "ok": False,
+                "error": (
+                    "Merge service isn't configured on this deployment. Secrets this app "
+                    "instance can currently see: " + (", ".join(seen) if seen else "none")
+                    + ". Add tecscon_api_url / tecscon_api_key to this app's Settings → Secrets."
+                ),
+                "made_at": datetime.now().strftime("%H:%M"),
+            }
         else:
             try:
                 _files = [(f.name, f.getvalue()) for f in _consolidate]
-                _status, _body = _api_upload_ledgers(_files, api_url, api_key)
-                if _status < 300 and _body.get("job_id"):
-                    st.session_state.upload_job = {
-                        "job_id": _body.get("job_id"),
-                        "year_month": _body.get("year_month"),
-                        "status": _body.get("status", "queued"),
-                        "current_step": _body.get("message"),
-                        "error_message": None,
-                        "file_name": ", ".join(f.name for f in _consolidate),
-                        "started_at": datetime.now().strftime("%H:%M"),
-                        "started_iso": datetime.now(timezone.utc).isoformat(),
+                _status, _body = _api_merge_ledgers(_files, api_url, api_key)
+                _ym = _body.get("year_month")
+                if _status < 300 and _ym:
+                    # Merge succeeded — fetch the merged file server-side so the
+                    # browser can offer it for download without the API key.
+                    _b64, _dl_name, _dl_err = None, None, None
+                    try:
+                        _bytes, _dl_name = _api_download_merged(_ym, api_url, api_key)
+                        _b64 = base64.b64encode(_bytes).decode("ascii")
+                    except Exception as _dexc:
+                        _dl_err = f"The files merged, but the merged file couldn't be fetched for download: {_dexc}"
+                    st.session_state.merge_result = {
+                        "ok": True,
+                        "year_month": _ym,
                         "merge_report": _body.get("merge_report"),
+                        "file_b64": _b64,
+                        "file_name": _dl_name or f"merged_ledger_{_ym}.xlsx",
+                        "download_error": _dl_err,
+                        "made_at": datetime.now().strftime("%H:%M"),
                     }
-                    st.session_state.last_error = None
                 else:
                     _detail = _body.get("detail") or _body.get("error") or f"Merge rejected (HTTP {_status})."
-                    st.session_state.last_error = "Consolidation failed: " + str(_detail)
+                    st.session_state.merge_result = {
+                        "ok": False,
+                        "error": str(_detail),
+                        "status_code": _status,
+                        "merge_report": _body.get("merge_report"),
+                        "made_at": datetime.now().strftime("%H:%M"),
+                    }
+                st.session_state.last_error = None
             except Exception as exc:
-                st.session_state.last_error = f"Could not start the forecast pipeline: {exc}"
+                st.session_state.merge_result = {
+                    "ok": False,
+                    "error": f"Could not reach the merge service: {exc}",
+                    "made_at": datetime.now().strftime("%H:%M"),
+                }
+                st.session_state.last_error = None
 
 
 last_error = st.session_state.last_error
