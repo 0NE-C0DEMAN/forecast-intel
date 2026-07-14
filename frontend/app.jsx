@@ -932,12 +932,10 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
     { col: 'difference',          label: 'Pred. Δ',       width: '7%',  align: 'right', sortable: true },
     { col: 'quantity',            label: 'Qty',            width: '6%',  align: 'right', sortable: true },
     { col: 'itemMape',            label: 'MAPE',           width: '6%',  align: 'right', sortable: true },
-    // The six cost/value columns from the 2026-07 schema update, shown exactly
-    // as the backend names them. Rates are AED per unit; values are predicted
-    // balance × rate. HV items only — NULL renders as "—", never 0.
-    { col: 'lowCost',             label: 'Low Cost',       width: '6%',  align: 'right', sortable: true },
-    { col: 'avgCost',             label: 'Avg Cost',       width: '6%',  align: 'right', sortable: true },
-    { col: 'highCost',            label: 'High Cost',      width: '6%',  align: 'right', sortable: true },
+    // Predicted value columns (2026-07 schema): predicted balance × rental
+    // rate, in AED. HV items only — NULL renders as "—", never 0. The per-unit
+    // rate columns (low/avg/high_cost) are deliberately NOT shown — client
+    // asked to keep rates internal (ML-side only), values visible.
     { col: 'predValueLow',        label: 'Value Low',      width: '8%',  align: 'right', sortable: true },
     { col: 'predValueAvg',        label: 'Value Avg',      width: '8%',  align: 'right', sortable: true },
     { col: 'predValueHigh',       label: 'Value High',     width: '8%',  align: 'right', sortable: true },
@@ -1139,13 +1137,9 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
                       color: row.itemMape == null ? 'var(--text-3)' : row.itemMape > 100 ? '#DC2626' : row.itemMape > 50 ? '#D97706' : '#059669' }}>
                       {row.itemMape != null ? row.itemMape.toFixed(1) + '%' : '—'}
                     </td>
-                    {/* The six cost/value columns (HV items only; NULL -> dash, never 0).
-                        Rates: AED per unit. Values: predicted balance × rate, in AED. */}
-                    {[row.lowCost, row.avgCost, row.highCost].map((v, k) => (
-                      <td key={'c' + k} style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, color: v != null ? 'var(--text-2)' : 'var(--text-3)' }}>
-                        {v != null ? (Number.isInteger(v) ? v.toLocaleString('en-US') : v.toFixed(1)) : '—'}
-                      </td>
-                    ))}
+                    {/* Predicted value columns (HV items only; NULL -> dash, never 0).
+                        Values: predicted balance × rental rate, in AED. Per-unit rates
+                        are intentionally not rendered (ML-side only). */}
                     {[row.predValueLow, row.predValueAvg, row.predValueHigh].map((v, k) => (
                       <td key={'v' + k} style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: k === 1 ? 700 : 600, color: v != null ? 'var(--text)' : 'var(--text-3)' }}
                         title={v != null ? fmtNum0(v) + ' ' + CURRENCY : ''}>
