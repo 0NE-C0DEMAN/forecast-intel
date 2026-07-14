@@ -1145,7 +1145,8 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
                       <td key={'v' + k} style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: k === 1 ? 700 : 600, color: v != null ? 'var(--text-2)' : 'var(--text-3)' }}
                         title={v != null ? fmtNum0(v) + ' ' + CURRENCY : ''}>
                         {/* Symbol dark, amount lighter — per Sonu. */}
-                        {v != null ? <span style={{ whiteSpace: 'nowrap' }}><DirhamSign s="0.82em" style={{ color: 'var(--text)' }} />{fmtNum0(v)}</span> : '—'}
+                        {/* Symbol inherits the cell's (amount) color + sits at text size. */}
+                        {v != null ? <span style={{ whiteSpace: 'nowrap' }}><DirhamSign s="1em" />{fmtNum0(v)}</span> : '—'}
                       </td>
                     ))}
                   </tr>

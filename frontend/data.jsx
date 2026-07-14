@@ -60,10 +60,12 @@ const CURRENCY = 'AED';
    codepoint in fonts yet — U+20C3 is still rolling out). Plain-text spots
    (tooltips, exports) keep the "AED" code. */
 function DirhamSign({ s, style }) {
-  const size = s || '0.88em';
+  const size = s || '1em';
+  // viewBox cropped to the actual glyph bounds (~x38-216, y46-210) so the mark
+  // fills its box instead of floating in padding — visible at plain text size.
   return (
-    <svg viewBox="0 0 256 256" width={size} height={size} role="img" aria-label="AED"
-      style={{ display: 'inline-block', verticalAlign: '-0.09em', marginRight: '0.2em', flexShrink: 0, ...style }}>
+    <svg viewBox="38 44 180 168" width={size} height={size} role="img" aria-label="AED"
+      style={{ display: 'inline-block', verticalAlign: '-0.15em', marginRight: '0.14em', flexShrink: 0, ...style }}>
       <g fill="currentColor">
         {/* Main 'D' (outer shape + carved counter) */}
         <path fillRule="evenodd" d="M 125 48 L 60 48 C 70 48, 75 53, 75 63 L 75 193 C 75 203, 70 208, 60 208 L 125 208 C 165 208, 200 183, 200 128 C 200 73, 165 48, 125 48 Z M 105 68 L 125 68 C 150 68, 170 88, 170 128 C 170 168, 150 188, 125 188 L 105 188 Z" />
