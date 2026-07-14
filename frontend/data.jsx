@@ -63,10 +63,12 @@ function DirhamSign({ s, style }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} role="img" aria-label="AED"
       style={{ display: 'inline-block', verticalAlign: '-0.06em', marginRight: '0.22em', flexShrink: 0, ...style }}>
-      <g fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
-        <path d="M8 3.2 H11.2 C16.8 3.2 20.4 6.9 20.4 12 C20.4 17.1 16.8 20.8 11.2 20.8 H8 V3.2 Z" strokeLinejoin="round" />
-        <line x1="2.6" y1="9.4" x2="14" y2="9.4" />
-        <line x1="2.6" y1="14.6" x2="14" y2="14.6" />
+      <g fill="currentColor">
+        {/* Serif capital D (slab serifs top/bottom-left, carved counter). */}
+        <path fillRule="evenodd" d="M5 3 H12 C18 3 21.4 6.7 21.4 12 C21.4 17.3 18 21 12 21 H5 V19.4 H6.8 V4.6 H5 Z M9.2 5.2 V18.8 H12 C16.4 18.8 18.8 16.2 18.8 12 C18.8 7.8 16.4 5.2 12 5.2 Z" />
+        {/* Two ribbon bars: wavy tails on the left, gentle tapered tips just past the bowl. */}
+        <path d="M1.4 8.3 C2.6 7.6 3.9 7.7 5 8.2 L20.2 8.2 C21.2 8.4 21.9 8.8 22.2 9.3 C21.6 9.9 20.7 10.3 19.7 10.35 L5 10.35 C3.8 10.9 2.4 10.9 1.2 10.3 C1.9 9.7 1.9 8.9 1.4 8.3 Z" />
+        <path d="M1.4 13.85 C2.6 13.15 3.9 13.25 5 13.75 L20.2 13.75 C21.2 13.95 21.9 14.35 22.2 14.85 C21.6 15.45 20.7 15.85 19.7 15.9 L5 15.9 C3.8 16.45 2.4 16.45 1.2 15.85 C1.9 15.25 1.9 14.45 1.4 13.85 Z" />
       </g>
     </svg>
   );
