@@ -937,9 +937,9 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
     // rate, in AED. HV items only — NULL renders as "—", never 0. The per-unit
     // rate columns (low/avg/high_cost) are deliberately NOT shown — client
     // asked to keep rates internal (ML-side only), values visible.
-    { col: 'predValueLow',        label: 'Pred Cost Min',  width: '8%',  align: 'right', sortable: true, cur: true },
-    { col: 'predValueAvg',        label: 'Pred Cost Avg',  width: '8%',  align: 'right', sortable: true, cur: true },
-    { col: 'predValueHigh',       label: 'Pred Cost Max',  width: '8%',  align: 'right', sortable: true, cur: true },
+    { col: 'predValueLow',        label: 'Pred Cost Min',  width: '9%',  align: 'right', sortable: true, cur: true },
+    { col: 'predValueAvg',        label: 'Pred Cost Avg',  width: '9%',  align: 'right', sortable: true, cur: true },
+    { col: 'predValueHigh',       label: 'Pred Cost Max',  width: '9%',  align: 'right', sortable: true, cur: true },
   ];
 
   const thStyle = (h) => ({
@@ -948,7 +948,10 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
     cursor: h.sortable ? 'pointer' : 'default', userSelect: 'none',
     textTransform: 'uppercase', letterSpacing: '.05em',
     borderBottom: '2px solid var(--border)', background: '#FAFBFC',
-    whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 1,
+    // Wrap instead of nowrap so a long header (e.g. the Dirham + "PRED COST MAX")
+    // never hides behind the next column's opaque background.
+    whiteSpace: 'normal', lineHeight: 1.2, verticalAlign: 'bottom',
+    position: 'sticky', top: 0, zIndex: 1,
   });
 
   return (
@@ -1056,7 +1059,7 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
               <tr>
                 {cols.map(h => (
                   <th key={h.col} onClick={() => h.sortable && handleSort(h.col)} style={thStyle(h)}>
-                    {h.cur && <DirhamSign s="1.05em" style={{ marginRight: 3 }} />}{h.label}{h.sortable && (sortCol === h.col
+                    {h.label}{h.cur && <span style={{ whiteSpace: 'nowrap' }}> (<DirhamSign s="1em" style={{ marginRight: 0, verticalAlign: '-0.12em' }} />)</span>}{h.sortable && (sortCol === h.col
                       ? <span style={{ fontSize: 12, marginLeft: 3, color: 'var(--accent)' }}>{sortDir === 'asc' ? '▲' : '▼'}</span>
                       : <span style={{ fontSize: 9, marginLeft: 3, color: 'var(--text-3)', opacity: .6 }}>↕</span>)}
                   </th>
