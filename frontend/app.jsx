@@ -932,7 +932,15 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
     { col: 'difference',          label: 'Pred. Δ',       width: '7%',  align: 'right', sortable: true },
     { col: 'quantity',            label: 'Qty',            width: '6%',  align: 'right', sortable: true },
     { col: 'itemMape',            label: 'MAPE',           width: '6%',  align: 'right', sortable: true },
-    { col: 'predValueAvg',        label: 'Pred. Value',   width: '10%', align: 'right', sortable: true },
+    // The six cost/value columns from the 2026-07 schema update, shown exactly
+    // as the backend names them. Rates are AED per unit; values are predicted
+    // balance × rate. HV items only — NULL renders as "—", never 0.
+    { col: 'lowCost',             label: 'Low Cost',       width: '6%',  align: 'right', sortable: true },
+    { col: 'avgCost',             label: 'Avg Cost',       width: '6%',  align: 'right', sortable: true },
+    { col: 'highCost',            label: 'High Cost',      width: '6%',  align: 'right', sortable: true },
+    { col: 'predValueLow',        label: 'Value Low',      width: '8%',  align: 'right', sortable: true },
+    { col: 'predValueAvg',        label: 'Value Avg',      width: '8%',  align: 'right', sortable: true },
+    { col: 'predValueHigh',       label: 'Value High',     width: '8%',  align: 'right', sortable: true },
   ];
 
   const thStyle = (h) => ({
@@ -1131,17 +1139,19 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
                       color: row.itemMape == null ? 'var(--text-3)' : row.itemMape > 100 ? '#DC2626' : row.itemMape > 50 ? '#D97706' : '#059669' }}>
                       {row.itemMape != null ? row.itemMape.toFixed(1) + '%' : '—'}
                     </td>
-                    {/* Predicted rental value — LAST column (HV items only; NULL -> dash, never 0).
-                        avg on top, low–high range beneath so all three pred_value_* show. */}
-                    <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: row.predValueAvg != null ? 'var(--text)' : 'var(--text-3)' }}
-                      title={row.predValueAvg != null ? `Low ${fmtNum0(row.predValueLow)} · Avg ${fmtNum0(row.predValueAvg)} · High ${fmtNum0(row.predValueHigh)} ${CURRENCY}` : ''}>
-                      {row.predValueAvg != null ? (
-                        <React.Fragment>
-                          {fmtMoneyShort(row.predValueAvg)}
-                          <div style={{ fontSize: 9.5, color: 'var(--text-3)', fontWeight: 500, marginTop: 1 }}>{fmtShort(row.predValueLow)} – {fmtShort(row.predValueHigh)}</div>
-                        </React.Fragment>
-                      ) : '—'}
-                    </td>
+                    {/* The six cost/value columns (HV items only; NULL -> dash, never 0).
+                        Rates: AED per unit. Values: predicted balance × rate, in AED. */}
+                    {[row.lowCost, row.avgCost, row.highCost].map((v, k) => (
+                      <td key={'c' + k} style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, color: v != null ? 'var(--text-2)' : 'var(--text-3)' }}>
+                        {v != null ? (Number.isInteger(v) ? v.toLocaleString('en-US') : v.toFixed(1)) : '—'}
+                      </td>
+                    ))}
+                    {[row.predValueLow, row.predValueAvg, row.predValueHigh].map((v, k) => (
+                      <td key={'v' + k} style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: k === 1 ? 700 : 600, color: v != null ? 'var(--text)' : 'var(--text-3)' }}
+                        title={v != null ? fmtNum0(v) + ' ' + CURRENCY : ''}>
+                        {v != null ? fmtNum0(v) : '—'}
+                      </td>
+                    ))}
                   </tr>
                 );
               })}
