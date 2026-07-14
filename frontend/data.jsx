@@ -114,14 +114,16 @@ function supabaseRowsToRecords(rows) {
     forecastMode: _txt(r.forecast_mode),
     // Cost / value columns — populated only for the ~94 High-Value items;
     // NULL for everything else (_num keeps that null so the UI shows "-",
-    // never 0). low/avg/high = rental rate per unit; predValue* = predicted
-    // balance × the matching rate.
+    // never 0). low/avg/high = rental rate per unit (internal, not rendered);
+    // predValue* = predicted balance × the matching rate. The backend RENAMED
+    // the value columns on 2026-07-14 (pred_value_low/avg/high →
+    // pred_cost_min/avg/max) — read the new names first, old as fallback.
     lowCost: _num(r.low_cost),
     avgCost: _num(r.avg_cost),
     highCost: _num(r.high_cost),
-    predValueLow: _num(r.pred_value_low),
-    predValueAvg: _num(r.pred_value_avg),
-    predValueHigh: _num(r.pred_value_high),
+    predValueLow: _num(r.pred_cost_min != null ? r.pred_cost_min : r.pred_value_low),
+    predValueAvg: _num(r.pred_cost_avg != null ? r.pred_cost_avg : r.pred_value_avg),
+    predValueHigh: _num(r.pred_cost_max != null ? r.pred_cost_max : r.pred_value_high),
   }));
 }
 
@@ -179,7 +181,7 @@ function formatSourceLabel(runMeta) {
    the supabase project URL so swapping creds doesn't read the wrong cache.
    CACHE_NS bumped to v2 when the schema flipped from per-run to per-year
    (and per-row stored columns replaced client-side derivations). */
-const CACHE_NS = 'fi.v3';
+const CACHE_NS = 'fi.v4';
 function _cacheKey(suffix) {
   const url = window.__SUPABASE_URL || 'noenv';
   return `${CACHE_NS}|${url}|${suffix}`;

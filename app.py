@@ -786,14 +786,17 @@ def _supabase_to_records(pred_rows: list[dict]) -> list[dict]:
             "forecastMode": ftext(r.get("forecast_mode")),
             # Cost / value columns — populated only for the ~94 High-Value
             # items; NULL for the rest (fnum keeps that None -> the UI shows
-            # "-", never 0). low/avg/high = rental rate per unit; predValue*
-            # = predicted balance x the matching rate.
+            # "-", never 0). low/avg/high = rental rate per unit (internal,
+            # not rendered); predValue* = predicted balance x the matching
+            # rate. Backend RENAMED the value columns on 2026-07-14
+            # (pred_value_low/avg/high -> pred_cost_min/avg/max) — read the
+            # new names first, old as fallback.
             "lowCost": fnum(r.get("low_cost")),
             "avgCost": fnum(r.get("avg_cost")),
             "highCost": fnum(r.get("high_cost")),
-            "predValueLow": fnum(r.get("pred_value_low")),
-            "predValueAvg": fnum(r.get("pred_value_avg")),
-            "predValueHigh": fnum(r.get("pred_value_high")),
+            "predValueLow": fnum(r.get("pred_cost_min", r.get("pred_value_low"))),
+            "predValueAvg": fnum(r.get("pred_cost_avg", r.get("pred_value_avg"))),
+            "predValueHigh": fnum(r.get("pred_cost_max", r.get("pred_value_high"))),
         })
     return records
 
