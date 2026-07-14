@@ -54,21 +54,23 @@ function _txt(v) {
    currency. NULL / non-numeric -> "-" (cost is only filled for HV items, so
    every Standard item and any missing value renders as a dash, never 0). */
 const CURRENCY = 'AED';
-/* Official UAE Dirham symbol (Central Bank, Mar 2025): a Latin "D" crossed by
-   two horizontal bars. No Unicode codepoint exists yet, so it's drawn as a
-   tiny inline SVG that scales with the surrounding font and inherits its
-   color. Plain-text spots (tooltips, exports) keep the "AED" code. */
+/* UAE Dirham symbol (Central Bank, Mar 2025) — artwork supplied by Sonu/Sid:
+   a "D" with two horizontal bars, viewBox 256x256. Fill uses currentColor so
+   it scales with the surrounding font and inherits its color (no Unicode
+   codepoint in fonts yet — U+20C3 is still rolling out). Plain-text spots
+   (tooltips, exports) keep the "AED" code. */
 function DirhamSign({ s, style }) {
   const size = s || '0.88em';
   return (
-    <svg viewBox="0 0 24 24" width={size} height={size} role="img" aria-label="AED"
-      style={{ display: 'inline-block', verticalAlign: '-0.06em', marginRight: '0.22em', flexShrink: 0, ...style }}>
+    <svg viewBox="0 0 256 256" width={size} height={size} role="img" aria-label="AED"
+      style={{ display: 'inline-block', verticalAlign: '-0.09em', marginRight: '0.2em', flexShrink: 0, ...style }}>
       <g fill="currentColor">
-        {/* Serif capital D (slab serifs top/bottom-left, carved counter). */}
-        <path fillRule="evenodd" d="M5 3 H12 C18 3 21.4 6.7 21.4 12 C21.4 17.3 18 21 12 21 H5 V19.4 H6.8 V4.6 H5 Z M9.2 5.2 V18.8 H12 C16.4 18.8 18.8 16.2 18.8 12 C18.8 7.8 16.4 5.2 12 5.2 Z" />
-        {/* Two ribbon bars: wavy tails on the left, gentle tapered tips just past the bowl. */}
-        <path d="M1.4 8.3 C2.6 7.6 3.9 7.7 5 8.2 L20.2 8.2 C21.2 8.4 21.9 8.8 22.2 9.3 C21.6 9.9 20.7 10.3 19.7 10.35 L5 10.35 C3.8 10.9 2.4 10.9 1.2 10.3 C1.9 9.7 1.9 8.9 1.4 8.3 Z" />
-        <path d="M1.4 13.85 C2.6 13.15 3.9 13.25 5 13.75 L20.2 13.75 C21.2 13.95 21.9 14.35 22.2 14.85 C21.6 15.45 20.7 15.85 19.7 15.9 L5 15.9 C3.8 16.45 2.4 16.45 1.2 15.85 C1.9 15.25 1.9 14.45 1.4 13.85 Z" />
+        {/* Main 'D' (outer shape + carved counter) */}
+        <path fillRule="evenodd" d="M 125 48 L 60 48 C 70 48, 75 53, 75 63 L 75 193 C 75 203, 70 208, 60 208 L 125 208 C 165 208, 200 183, 200 128 C 200 73, 165 48, 125 48 Z M 105 68 L 125 68 C 150 68, 170 88, 170 128 C 170 168, 150 188, 125 188 L 105 188 Z" />
+        {/* Top bar */}
+        <path d="M 40 105 L 200 105 Q 213 105, 215 120 L 55 120 Q 42 120, 40 105 Z" />
+        {/* Bottom bar */}
+        <path d="M 40 136 L 200 136 Q 213 136, 215 151 L 55 151 Q 42 151, 40 136 Z" />
       </g>
     </svg>
   );
