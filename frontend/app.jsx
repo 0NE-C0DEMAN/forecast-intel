@@ -936,9 +936,9 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
     // rate, in AED. HV items only — NULL renders as "—", never 0. The per-unit
     // rate columns (low/avg/high_cost) are deliberately NOT shown — client
     // asked to keep rates internal (ML-side only), values visible.
-    { col: 'predValueLow',        label: 'Value Low',      width: '8%',  align: 'right', sortable: true },
-    { col: 'predValueAvg',        label: 'Value Avg',      width: '8%',  align: 'right', sortable: true },
-    { col: 'predValueHigh',       label: 'Value High',     width: '8%',  align: 'right', sortable: true },
+    { col: 'predValueLow',        label: 'Min Val',        width: '8%',  align: 'right', sortable: true },
+    { col: 'predValueAvg',        label: 'Avg Val',        width: '8%',  align: 'right', sortable: true },
+    { col: 'predValueHigh',       label: 'Max Val',        width: '8%',  align: 'right', sortable: true },
   ];
 
   const thStyle = (h) => ({
