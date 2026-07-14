@@ -332,7 +332,7 @@ function PredictionsPage({ data, allData, stats, periodGroups, period, mode = 'p
           <KPI color={isActual ? '#F59E0B' : 'var(--accent)'} label={'Net Closing Bal' + modeTag} value={fmtK(viewStats.curTotal)} sub={`${pctChange >= 0 ? '+' : ''}${pctChange}% vs prev`} subColor={pctChange >= 0 ? '#059669' : '#DC2626'} />
           <KPI color="#059669" label={'Deliver Volume' + modeTag} value={fmtK(viewStats.deliverQty)} sub={`${viewStats.deliver} items`} subColor="#059669" />
           <KPI color="#DC2626" label={'Return Volume' + modeTag} value={fmtK(viewStats.returnQty)} sub={`${viewStats.return} items`} subColor="#DC2626" />
-          <KPI color="#7C3AED" label="Forecast Value" value={viewStats.hvValueN ? fmtMoneyShort(viewStats.hvValue) : '—'} sub={viewStats.hvValueN ? `${fmtShort(viewStats.hvValueLow)}–${fmtShort(viewStats.hvValueHigh)} · ${viewStats.hvValueN} HV` : 'HV items only'} />
+          <KPI color="#7C3AED" label="Forecast Value" value={viewStats.hvValueN ? <span style={{ whiteSpace: 'nowrap' }}><DirhamSign />{fmtShort(viewStats.hvValue)}</span> : '—'} sub={viewStats.hvValueN ? `${fmtShort(viewStats.hvValueLow)}–${fmtShort(viewStats.hvValueHigh)} · ${viewStats.hvValueN} HV` : 'HV items only'} />
         </div>
       </div>
 
@@ -1144,7 +1144,7 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
                     {[row.predValueLow, row.predValueAvg, row.predValueHigh].map((v, k) => (
                       <td key={'v' + k} style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: k === 1 ? 700 : 600, color: v != null ? 'var(--text)' : 'var(--text-3)' }}
                         title={v != null ? fmtNum0(v) + ' ' + CURRENCY : ''}>
-                        {v != null ? fmtNum0(v) : '—'}
+                        {v != null ? <span style={{ whiteSpace: 'nowrap' }}><DirhamSign s="0.82em" style={{ opacity: .55 }} />{fmtNum0(v)}</span> : '—'}
                       </td>
                     ))}
                   </tr>

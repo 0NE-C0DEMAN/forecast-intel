@@ -347,7 +347,7 @@ function ItemInsightPage({ allData }) {
                   {stats.coming.predValueAvg != null && (
                     <div style={{ marginTop: 12, paddingTop: 11, borderTop: '1px dashed var(--border)' }}>
                       <div style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>Est. rental value</div>
-                      <div style={{ fontSize: 17, fontWeight: 800, fontFamily: 'var(--mono)', color: 'var(--text)', lineHeight: 1.15, marginTop: 3 }}>{fmtMoney(stats.coming.predValueAvg)}</div>
+                      <div style={{ fontSize: 17, fontWeight: 800, fontFamily: 'var(--mono)', color: 'var(--text)', lineHeight: 1.15, marginTop: 3 }}><DirhamSign />{fmtNum0(stats.coming.predValueAvg)}</div>
                       {/* Low–high value range only; per-unit rates stay internal (ML-side). */}
                       <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2, fontFamily: 'var(--mono)' }}>{fmtNum0(stats.coming.predValueLow)} – {fmtNum0(stats.coming.predValueHigh)}</div>
                     </div>

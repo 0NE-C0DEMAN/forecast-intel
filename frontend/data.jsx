@@ -54,6 +54,23 @@ function _txt(v) {
    currency. NULL / non-numeric -> "-" (cost is only filled for HV items, so
    every Standard item and any missing value renders as a dash, never 0). */
 const CURRENCY = 'AED';
+/* Official UAE Dirham symbol (Central Bank, Mar 2025): a Latin "D" crossed by
+   two horizontal bars. No Unicode codepoint exists yet, so it's drawn as a
+   tiny inline SVG that scales with the surrounding font and inherits its
+   color. Plain-text spots (tooltips, exports) keep the "AED" code. */
+function DirhamSign({ s, style }) {
+  const size = s || '0.88em';
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} role="img" aria-label="AED"
+      style={{ display: 'inline-block', verticalAlign: '-0.06em', marginRight: '0.22em', flexShrink: 0, ...style }}>
+      <g fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
+        <path d="M8 3.2 H11.2 C16.8 3.2 20.4 6.9 20.4 12 C20.4 17.1 16.8 20.8 11.2 20.8 H8 V3.2 Z" strokeLinejoin="round" />
+        <line x1="2.6" y1="9.4" x2="14" y2="9.4" />
+        <line x1="2.6" y1="14.6" x2="14" y2="14.6" />
+      </g>
+    </svg>
+  );
+}
 function fmtMoney(v) {
   if (v == null) return '-';
   const n = Number(v);
@@ -556,6 +573,6 @@ Object.assign(window, {
   summariseYears, useSupabaseData,
   readCache, writeCache,
   classifyAction, fcAction, fcBal, fcQty,
-  fmtMoney, fmtMoneyShort, fmtNum0, fmtShort, CURRENCY,
+  fmtMoney, fmtMoneyShort, fmtNum0, fmtShort, CURRENCY, DirhamSign,
   SearchBox,
 });
