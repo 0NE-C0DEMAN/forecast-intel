@@ -67,7 +67,25 @@ function PeriodSelector({ value, onChange, options }) {
 function App() {
   const sb = useSupabaseData();
   const [hydrated, setHydrated] = useState(() => (window.__RAW_DATA != null));
-  const [page, setPage] = useState(() => (typeof window !== 'undefined' && window.__UPLOAD_JOB) ? 'upload' : 'lineitems');
+  // Every bridge action (merge, ledger upload, job clear, reset…) makes
+  // Streamlit rerun and reload this iframe, so React state — including which
+  // page is open — is lost. Boot rules: an in-flight forecast job or a fresh
+  // merge result forces the Upload page (that's where their panels live);
+  // otherwise restore the page the user was on (sessionStorage survives the
+  // reload); fall back to Line Items.
+  const PAGE_IDS = ['lineitems', 'predictions', 'actionflow', 'accuracy', 'explorer', 'newitems', 'dormant', 'iteminsight', 'forecasts', 'upload'];
+  const [page, setPage] = useState(() => {
+    if (typeof window === 'undefined') return 'lineitems';
+    if (window.__UPLOAD_JOB || window.__MERGE_RESULT) return 'upload';
+    try {
+      const saved = sessionStorage.getItem('fi_page');
+      if (saved && PAGE_IDS.indexOf(saved) !== -1) return saved;
+    } catch (e) { /* storage unavailable — default below */ }
+    return 'lineitems';
+  });
+  useEffect(() => {
+    try { sessionStorage.setItem('fi_page', page); } catch (e) { /* noop */ }
+  }, [page]);
   const [period, setPeriod] = useState(null);
   const [collapsed, setCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 900);
   const [dsOpen, setDsOpen] = useState(false);
@@ -281,8 +299,13 @@ function PredictionsPage({ data, allData, stats, periodGroups, period, mode = 'p
     const returnQty  = ret.reduce((s, x) => s + fcQty(x, viewMode), 0);
     const prevTotal = d.reduce((s, x) => s + (x.prevClosingBal || 0), 0);
     const curTotal  = d.reduce((s, x) => s + (fcBal(x, viewMode) || 0), 0);
+    // Predicted rental value — HV items only (cost is NULL for Standard items),
+    // so the sum is the forecast value of the high-value stock for this month.
+    const hvValRows = d.filter(x => x.predValueAvg != null);
+    const hvValue   = hvValRows.reduce((s, x) => s + x.predValueAvg, 0);
     return { deliver: deliver.length, return: ret.length, deliverQty, returnQty, prevTotal, curTotal,
-             total: d.length, hvCount: d.filter(x => x.isHV).length };
+             total: d.length, hvCount: d.filter(x => x.isHV).length,
+             hvValue, hvValueN: hvValRows.length };
   }, [data, viewMode]);
 
   const pctChange = viewStats.prevTotal > 0 ? (((viewStats.curTotal - viewStats.prevTotal) / viewStats.prevTotal) * 100).toFixed(1) : '0';
@@ -302,11 +325,12 @@ function PredictionsPage({ data, allData, stats, periodGroups, period, mode = 'p
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Sticky KPI strip — Predicted/Actual is driven by the header toggle. */}
       <div style={{ padding: '14px 24px 0', flexShrink: 0 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>
           <KPI color="var(--accent)" label="Items" value={viewStats.total} sub={`${viewStats.hvCount} high-value`} />
           <KPI color={isActual ? '#F59E0B' : 'var(--accent)'} label={'Net Closing Bal' + modeTag} value={fmtK(viewStats.curTotal)} sub={`${pctChange >= 0 ? '+' : ''}${pctChange}% vs prev`} subColor={pctChange >= 0 ? '#059669' : '#DC2626'} />
           <KPI color="#059669" label={'Deliver Volume' + modeTag} value={fmtK(viewStats.deliverQty)} sub={`${viewStats.deliver} items`} subColor="#059669" />
           <KPI color="#DC2626" label={'Return Volume' + modeTag} value={fmtK(viewStats.returnQty)} sub={`${viewStats.return} items`} subColor="#DC2626" />
+          <KPI color="#7C3AED" label="Forecast Value" value={viewStats.hvValueN ? fmtMoneyShort(viewStats.hvValue) : '—'} sub={viewStats.hvValueN ? `${viewStats.hvValueN} HV items` : 'HV items only'} />
         </div>
       </div>
 
@@ -900,6 +924,7 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
     ...(hasActuals ? [{ col: 'actualAction', label: 'Actual Action', width: '9%', align: 'left', sortable: true }] : []),
     { col: 'prevClosingBal',      label: 'Prev Bal',      width: '8%',  align: 'right', sortable: true },
     { col: 'predictedClosingBal', label: 'Pred. Bal',     width: '8%',  align: 'right', sortable: true },
+    { col: 'predValueAvg',        label: 'Pred. Value',   width: '9%',  align: 'right', sortable: true },
     ...(hasActuals ? [{ col: 'actualClosingBal', label: 'Actual Bal', width: '8%', align: 'right', sortable: true }] : []),
     ...(hasActuals ? [{ col: 'error', label: 'Error (Δ)', width: '7%', align: 'right', sortable: true }] : []),
     ...(hasActuals ? [{ col: 'ape', label: 'APE %', width: '6%', align: 'right', sortable: true }] : []),
@@ -1075,6 +1100,11 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
                     {/* Numeric cols */}
                     <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-2)' }}>{fmt(row.prevClosingBal)}</td>
                     <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700 }}>{fmt(row.predictedClosingBal)}</td>
+                    {/* Predicted rental value (HV items only; NULL -> dash, never 0). Tooltip shows the low–high range. */}
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: row.predValueAvg != null ? 'var(--text)' : 'var(--text-3)' }}
+                      title={row.predValueAvg != null ? `Range ${fmtNum0(row.predValueLow)} – ${fmtNum0(row.predValueHigh)} ${CURRENCY}` : ''}>
+                      {row.predValueAvg != null ? fmtMoneyShort(row.predValueAvg) : '—'}
+                    </td>
                     {hasActuals && <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-2)' }}>{row.actualClosingBal != null ? fmt(row.actualClosingBal) : '—'}</td>}
 
                     {/* Error (absolute) */}

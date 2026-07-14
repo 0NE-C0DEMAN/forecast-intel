@@ -344,6 +344,14 @@ function ItemInsightPage({ allData }) {
                   {stats.coming.predictedAction && (
                     <span style={{ display: 'inline-block', marginTop: 10, fontSize: 11, fontWeight: 700, color: ac(stats.coming.predictedAction), background: stats.coming.predictedAction === 'Deliver' ? 'rgba(5,150,105,.08)' : stats.coming.predictedAction === 'Return' ? 'rgba(220,38,38,.07)' : 'rgba(217,119,6,.08)', padding: '3px 11px', borderRadius: 20 }}>{stats.coming.predictedAction}{stats.coming.quantity != null ? ' · ' + fmtK(stats.coming.quantity) : ''}</span>
                   )}
+                  {stats.coming.predValueAvg != null && (
+                    <div style={{ marginTop: 12, paddingTop: 11, borderTop: '1px dashed var(--border)' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>Est. rental value</div>
+                      <div style={{ fontSize: 17, fontWeight: 800, fontFamily: 'var(--mono)', color: 'var(--text)', lineHeight: 1.15, marginTop: 3 }}>{fmtMoney(stats.coming.predValueAvg)}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2, fontFamily: 'var(--mono)' }}>{fmtNum0(stats.coming.predValueLow)} – {fmtNum0(stats.coming.predValueHigh)}</div>
+                      {stats.coming.avgCost != null && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>@ {fmtNum0(stats.coming.lowCost)}–{fmtNum0(stats.coming.highCost)} / unit</div>}
+                    </div>
+                  )}
                 </div>
                 <div>
                   {stats.confidence ? (

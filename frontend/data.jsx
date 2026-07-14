@@ -49,6 +49,33 @@ function _txt(v) {
   return String(v).trim();
 }
 
+/* Money formatting for the cost / value columns. CURRENCY is the rental-rate
+   currency — change this ONE constant if the rates are ever in a different
+   currency. NULL / non-numeric -> "-" (cost is only filled for HV items, so
+   every Standard item and any missing value renders as a dash, never 0). */
+const CURRENCY = 'AED';
+function fmtMoney(v) {
+  if (v == null) return '-';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '-';
+  return CURRENCY + ' ' + Math.round(n).toLocaleString('en-US');
+}
+function fmtMoneyShort(v) {
+  if (v == null) return '-';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '-';
+  const a = Math.abs(n);
+  if (a >= 1e6) return CURRENCY + ' ' + (n / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
+  if (a >= 1e4) return CURRENCY + ' ' + Math.round(n / 1e3).toLocaleString('en-US') + 'k';
+  return CURRENCY + ' ' + Math.round(n).toLocaleString('en-US');
+}
+function fmtNum0(v) {
+  if (v == null) return '-';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '-';
+  return Math.round(n).toLocaleString('en-US');
+}
+
 // Mirror of Python's _supabase_to_records. As of the 2026-05-28 schema
 // update every Excel column is stored directly in Supabase, so we just
 // map column names through — no more client-side derivation.
@@ -74,6 +101,16 @@ function supabaseRowsToRecords(rows) {
     itemMape: _num(r.item_mape),
     mapeMonths: r.months_in_mape == null ? null : Math.round(Number(r.months_in_mape)),
     forecastMode: _txt(r.forecast_mode),
+    // Cost / value columns — populated only for the ~94 High-Value items;
+    // NULL for everything else (_num keeps that null so the UI shows "-",
+    // never 0). low/avg/high = rental rate per unit; predValue* = predicted
+    // balance × the matching rate.
+    lowCost: _num(r.low_cost),
+    avgCost: _num(r.avg_cost),
+    highCost: _num(r.high_cost),
+    predValueLow: _num(r.pred_value_low),
+    predValueAvg: _num(r.pred_value_avg),
+    predValueHigh: _num(r.pred_value_high),
   }));
 }
 
@@ -131,7 +168,7 @@ function formatSourceLabel(runMeta) {
    the supabase project URL so swapping creds doesn't read the wrong cache.
    CACHE_NS bumped to v2 when the schema flipped from per-run to per-year
    (and per-row stored columns replaced client-side derivations). */
-const CACHE_NS = 'fi.v2';
+const CACHE_NS = 'fi.v3';
 function _cacheKey(suffix) {
   const url = window.__SUPABASE_URL || 'noenv';
   return `${CACHE_NS}|${url}|${suffix}`;
@@ -506,5 +543,6 @@ Object.assign(window, {
   summariseYears, useSupabaseData,
   readCache, writeCache,
   classifyAction, fcAction, fcBal, fcQty,
+  fmtMoney, fmtMoneyShort, fmtNum0, CURRENCY,
   SearchBox,
 });

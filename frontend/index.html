@@ -63,8 +63,9 @@
 
   /* === Mobile-only overrides — desktop layout untouched above 900px === */
   @media (max-width: 900px) {
-    /* KPI strip: 2 columns on tablets/phones */
-    [style*="grid-template-columns: repeat(4, 1fr)"] {
+    /* KPI strip: 2 columns on tablets/phones (4-up and 5-up variants) */
+    [style*="grid-template-columns: repeat(4, 1fr)"],
+    [style*="grid-template-columns: repeat(5, 1fr)"] {
       grid-template-columns: repeat(2, 1fr) !important;
       gap: 8px !important;
     }
@@ -111,8 +112,9 @@
   }
 
   @media (max-width: 540px) {
-    /* Phone: KPI strip stacks fully */
-    [style*="grid-template-columns: repeat(4, 1fr)"] {
+    /* Phone: KPI strip stacks fully (4-up and 5-up variants) */
+    [style*="grid-template-columns: repeat(4, 1fr)"],
+    [style*="grid-template-columns: repeat(5, 1fr)"] {
       grid-template-columns: 1fr !important;
     }
     /* DataSource modal becomes full-screen */
