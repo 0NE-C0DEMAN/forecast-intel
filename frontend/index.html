@@ -19,6 +19,23 @@
   } catch (e) {}
 })();
 </script>
+<script>
+/* Horizontal-wheel support for every .h-scroller (Line Items table, chart
+   strips…). A mouse tilt-wheel / trackpad swipe emits wheel deltaX (and
+   Shift+wheel emits deltaY) — route that onto the nearest h-scroller so the
+   hardware horizontal scroller just works. Non-passive so we can stop the
+   page from also panning. Vertical-only wheel is left untouched. */
+document.addEventListener('wheel', function (e) {
+  var el = e.target && e.target.closest ? e.target.closest('.h-scroller') : null;
+  if (!el || el.scrollWidth <= el.clientWidth) return;
+  var dx = e.deltaX !== 0 ? e.deltaX : (e.shiftKey ? e.deltaY : 0);
+  if (!dx) return;
+  if (e.deltaMode === 1) dx *= 16; else if (e.deltaMode === 2) dx *= el.clientWidth;
+  var before = el.scrollLeft;
+  el.scrollLeft += dx;
+  if (el.scrollLeft !== before) e.preventDefault();
+}, { passive: false });
+</script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
