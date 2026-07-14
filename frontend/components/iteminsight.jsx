@@ -349,7 +349,7 @@ function ItemInsightPage({ allData }) {
                       <div style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>Est. rental value</div>
                       <div style={{ fontSize: 17, fontWeight: 800, fontFamily: 'var(--mono)', color: 'var(--text)', lineHeight: 1.15, marginTop: 3 }}>{fmtMoney(stats.coming.predValueAvg)}</div>
                       <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2, fontFamily: 'var(--mono)' }}>{fmtNum0(stats.coming.predValueLow)} – {fmtNum0(stats.coming.predValueHigh)}</div>
-                      {stats.coming.avgCost != null && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>@ {fmtNum0(stats.coming.lowCost)}–{fmtNum0(stats.coming.highCost)} / unit</div>}
+                      {stats.coming.avgCost != null && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>rate/unit {fmtNum0(stats.coming.lowCost)} · avg {fmtNum0(stats.coming.avgCost)} · {fmtNum0(stats.coming.highCost)}</div>}
                     </div>
                   )}
                 </div>

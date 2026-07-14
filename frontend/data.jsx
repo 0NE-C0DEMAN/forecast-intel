@@ -75,6 +75,17 @@ function fmtNum0(v) {
   if (!Number.isFinite(n)) return '-';
   return Math.round(n).toLocaleString('en-US');
 }
+// Compact, no currency symbol — for the low–high range shown next to a value
+// that already carries the currency (e.g. "186k – 279k" under "AED 233k").
+function fmtShort(v) {
+  if (v == null) return '-';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '-';
+  const a = Math.abs(n);
+  if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
+  if (a >= 1e4) return Math.round(n / 1e3).toLocaleString('en-US') + 'k';
+  return Math.round(n).toLocaleString('en-US');
+}
 
 // Mirror of Python's _supabase_to_records. As of the 2026-05-28 schema
 // update every Excel column is stored directly in Supabase, so we just
@@ -543,6 +554,6 @@ Object.assign(window, {
   summariseYears, useSupabaseData,
   readCache, writeCache,
   classifyAction, fcAction, fcBal, fcQty,
-  fmtMoney, fmtMoneyShort, fmtNum0, CURRENCY,
+  fmtMoney, fmtMoneyShort, fmtNum0, fmtShort, CURRENCY,
   SearchBox,
 });

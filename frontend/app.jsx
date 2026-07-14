@@ -302,10 +302,12 @@ function PredictionsPage({ data, allData, stats, periodGroups, period, mode = 'p
     // Predicted rental value — HV items only (cost is NULL for Standard items),
     // so the sum is the forecast value of the high-value stock for this month.
     const hvValRows = d.filter(x => x.predValueAvg != null);
-    const hvValue   = hvValRows.reduce((s, x) => s + x.predValueAvg, 0);
+    const hvValue     = hvValRows.reduce((s, x) => s + x.predValueAvg, 0);
+    const hvValueLow  = hvValRows.reduce((s, x) => s + (x.predValueLow  || 0), 0);
+    const hvValueHigh = hvValRows.reduce((s, x) => s + (x.predValueHigh || 0), 0);
     return { deliver: deliver.length, return: ret.length, deliverQty, returnQty, prevTotal, curTotal,
              total: d.length, hvCount: d.filter(x => x.isHV).length,
-             hvValue, hvValueN: hvValRows.length };
+             hvValue, hvValueLow, hvValueHigh, hvValueN: hvValRows.length };
   }, [data, viewMode]);
 
   const pctChange = viewStats.prevTotal > 0 ? (((viewStats.curTotal - viewStats.prevTotal) / viewStats.prevTotal) * 100).toFixed(1) : '0';
@@ -330,7 +332,7 @@ function PredictionsPage({ data, allData, stats, periodGroups, period, mode = 'p
           <KPI color={isActual ? '#F59E0B' : 'var(--accent)'} label={'Net Closing Bal' + modeTag} value={fmtK(viewStats.curTotal)} sub={`${pctChange >= 0 ? '+' : ''}${pctChange}% vs prev`} subColor={pctChange >= 0 ? '#059669' : '#DC2626'} />
           <KPI color="#059669" label={'Deliver Volume' + modeTag} value={fmtK(viewStats.deliverQty)} sub={`${viewStats.deliver} items`} subColor="#059669" />
           <KPI color="#DC2626" label={'Return Volume' + modeTag} value={fmtK(viewStats.returnQty)} sub={`${viewStats.return} items`} subColor="#DC2626" />
-          <KPI color="#7C3AED" label="Forecast Value" value={viewStats.hvValueN ? fmtMoneyShort(viewStats.hvValue) : '—'} sub={viewStats.hvValueN ? `${viewStats.hvValueN} HV items` : 'HV items only'} />
+          <KPI color="#7C3AED" label="Forecast Value" value={viewStats.hvValueN ? fmtMoneyShort(viewStats.hvValue) : '—'} sub={viewStats.hvValueN ? `${fmtShort(viewStats.hvValueLow)}–${fmtShort(viewStats.hvValueHigh)} · ${viewStats.hvValueN} HV` : 'HV items only'} />
         </div>
       </div>
 
@@ -924,13 +926,13 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
     ...(hasActuals ? [{ col: 'actualAction', label: 'Actual Action', width: '9%', align: 'left', sortable: true }] : []),
     { col: 'prevClosingBal',      label: 'Prev Bal',      width: '8%',  align: 'right', sortable: true },
     { col: 'predictedClosingBal', label: 'Pred. Bal',     width: '8%',  align: 'right', sortable: true },
-    { col: 'predValueAvg',        label: 'Pred. Value',   width: '9%',  align: 'right', sortable: true },
     ...(hasActuals ? [{ col: 'actualClosingBal', label: 'Actual Bal', width: '8%', align: 'right', sortable: true }] : []),
     ...(hasActuals ? [{ col: 'error', label: 'Error (Δ)', width: '7%', align: 'right', sortable: true }] : []),
     ...(hasActuals ? [{ col: 'ape', label: 'APE %', width: '6%', align: 'right', sortable: true }] : []),
     { col: 'difference',          label: 'Pred. Δ',       width: '7%',  align: 'right', sortable: true },
     { col: 'quantity',            label: 'Qty',            width: '6%',  align: 'right', sortable: true },
     { col: 'itemMape',            label: 'MAPE',           width: '6%',  align: 'right', sortable: true },
+    { col: 'predValueAvg',        label: 'Pred. Value',   width: '10%', align: 'right', sortable: true },
   ];
 
   const thStyle = (h) => ({
@@ -1035,8 +1037,11 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
 
       {/* Table card */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 12, border: '1px solid var(--border)', background: '#fff', minHeight: 0 }}>
-        <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed' }}>
+        {/* h-scroller = themed horizontal scrollbar; minWidth on the table below
+            makes it overflow (instead of squishing every column to fit) so the
+            wider column sets scroll horizontally on narrower windows. */}
+        <div className="h-scroller" style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+          <table style={{ width: '100%', minWidth: cols.length * 96, borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed' }}>
             <colgroup>
               {cols.map(c => <col key={c.col} style={{ width: c.width }} />)}
             </colgroup>
@@ -1100,11 +1105,6 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
                     {/* Numeric cols */}
                     <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-2)' }}>{fmt(row.prevClosingBal)}</td>
                     <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700 }}>{fmt(row.predictedClosingBal)}</td>
-                    {/* Predicted rental value (HV items only; NULL -> dash, never 0). Tooltip shows the low–high range. */}
-                    <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: row.predValueAvg != null ? 'var(--text)' : 'var(--text-3)' }}
-                      title={row.predValueAvg != null ? `Range ${fmtNum0(row.predValueLow)} – ${fmtNum0(row.predValueHigh)} ${CURRENCY}` : ''}>
-                      {row.predValueAvg != null ? fmtMoneyShort(row.predValueAvg) : '—'}
-                    </td>
                     {hasActuals && <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-2)' }}>{row.actualClosingBal != null ? fmt(row.actualClosingBal) : '—'}</td>}
 
                     {/* Error (absolute) */}
@@ -1130,6 +1130,17 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
                     <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700,
                       color: row.itemMape == null ? 'var(--text-3)' : row.itemMape > 100 ? '#DC2626' : row.itemMape > 50 ? '#D97706' : '#059669' }}>
                       {row.itemMape != null ? row.itemMape.toFixed(1) + '%' : '—'}
+                    </td>
+                    {/* Predicted rental value — LAST column (HV items only; NULL -> dash, never 0).
+                        avg on top, low–high range beneath so all three pred_value_* show. */}
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: row.predValueAvg != null ? 'var(--text)' : 'var(--text-3)' }}
+                      title={row.predValueAvg != null ? `Low ${fmtNum0(row.predValueLow)} · Avg ${fmtNum0(row.predValueAvg)} · High ${fmtNum0(row.predValueHigh)} ${CURRENCY}` : ''}>
+                      {row.predValueAvg != null ? (
+                        <React.Fragment>
+                          {fmtMoneyShort(row.predValueAvg)}
+                          <div style={{ fontSize: 9.5, color: 'var(--text-3)', fontWeight: 500, marginTop: 1 }}>{fmtShort(row.predValueLow)} – {fmtShort(row.predValueHigh)}</div>
+                        </React.Fragment>
+                      ) : '—'}
                     </td>
                   </tr>
                 );
