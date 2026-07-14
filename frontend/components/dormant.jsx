@@ -18,7 +18,8 @@ function DormantItemsPage({ allData }) {
   const ns = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const fmtShort = p => { if (!p) return ''; const [y, m] = p.split('-'); return `${ns[+m]} '${y.slice(2)}`; };
   const ymConsec = (a, b) => { const A = (+a.slice(0, 4)) * 12 + (+a.slice(5, 7)); const B = (+b.slice(0, 4)) * 12 + (+b.slice(5, 7)); return B - A === 1; };
-  const fmtNum = v => v == null ? '—' : (Math.abs(v - Math.round(v)) < 0.05 ? Math.round(v).toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 1 }));
+  // Whole numbers only (client asked to round all qty/cost displays).
+  const fmtNum = v => v == null ? '—' : (Math.round(v) || 0).toLocaleString('en-US');
 
   const meta = React.useMemo(() => {
     let latest = null, earliest = null;

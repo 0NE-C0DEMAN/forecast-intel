@@ -212,7 +212,8 @@ function ItemExplorerPage({ allData, period, mode = 'predicted' }) {
 
   const ac = (a) => a === 'Deliver' ? '#059669' : a === 'Return' ? '#DC2626' : '#D97706';
   const abg = (a) => a === 'Deliver' ? 'rgba(5,150,105,.08)' : a === 'Return' ? 'rgba(220,38,38,.07)' : 'rgba(217,119,6,.08)';
-  const fmt = (v) => { if (v == null) return '—'; if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 1 }); return v; };
+  // Whole numbers only (client asked to round all qty/cost displays).
+  const fmt = (v) => { if (v == null) return '—'; if (typeof v === 'number') return (Math.round(v) || 0).toLocaleString('en-US'); return v; };
 
   const totalQty = filtered.reduce((s, d) => s + (d.totalQty || 0), 0);
   const hvCount = filtered.filter(d => d.isHV).length;

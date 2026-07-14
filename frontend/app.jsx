@@ -845,8 +845,9 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
   };
   const ac = (a) => a === 'Deliver' ? '#059669' : a === 'Return' ? '#DC2626' : '#D97706';
   const acBg = (a) => a === 'Deliver' ? 'rgba(5,150,105,.1)' : a === 'Return' ? 'rgba(220,38,38,.08)' : 'rgba(217,119,6,.1)';
-  const fmt = (v) => { if (v == null) return '—'; if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 1 }); return v; };
-  const fmtSigned = (v) => v == null ? '—' : (v > 0 ? '+' : '') + fmt(v);
+  // All quantities/balances shown as whole numbers (client asked to round).
+  const fmt = (v) => { if (v == null) return '—'; if (typeof v === 'number') return (Math.round(v) || 0).toLocaleString('en-US'); return v; };
+  const fmtSigned = (v) => { if (v == null) return '—'; const r = Math.round(v) || 0; return (r > 0 ? '+' : '') + r.toLocaleString('en-US'); };
 
   // Unique items (by code) for the search dropdown suggestions.
   const searchOptions = useMemo(() => {
