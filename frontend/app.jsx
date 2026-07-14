@@ -1144,7 +1144,7 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
                     {[row.predValueLow, row.predValueAvg, row.predValueHigh].map((v, k) => (
                       <td key={'v' + k} style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: k === 1 ? 700 : 600, color: v != null ? 'var(--text)' : 'var(--text-3)' }}
                         title={v != null ? fmtNum0(v) + ' ' + CURRENCY : ''}>
-                        {v != null ? <span style={{ whiteSpace: 'nowrap' }}><DirhamSign s="0.82em" style={{ opacity: .55 }} />{fmtNum0(v)}</span> : '—'}
+                        {v != null ? <span style={{ whiteSpace: 'nowrap' }}><DirhamSign s="0.82em" />{fmtNum0(v)}</span> : '—'}
                       </td>
                     ))}
                   </tr>
