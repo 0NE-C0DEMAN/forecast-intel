@@ -937,9 +937,9 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
     // rate, in AED. HV items only — NULL renders as "—", never 0. The per-unit
     // rate columns (low/avg/high_cost) are deliberately NOT shown — client
     // asked to keep rates internal (ML-side only), values visible.
-    { col: 'predValueLow',        label: 'Pred Cost Min',  width: '8%',  align: 'right', sortable: true },
-    { col: 'predValueAvg',        label: 'Pred Cost Avg',  width: '8%',  align: 'right', sortable: true },
-    { col: 'predValueHigh',       label: 'Pred Cost Max',  width: '8%',  align: 'right', sortable: true },
+    { col: 'predValueLow',        label: 'Pred Cost Min',  width: '8%',  align: 'right', sortable: true, cur: true },
+    { col: 'predValueAvg',        label: 'Pred Cost Avg',  width: '8%',  align: 'right', sortable: true, cur: true },
+    { col: 'predValueHigh',       label: 'Pred Cost Max',  width: '8%',  align: 'right', sortable: true, cur: true },
   ];
 
   const thStyle = (h) => ({
@@ -1056,7 +1056,7 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
               <tr>
                 {cols.map(h => (
                   <th key={h.col} onClick={() => h.sortable && handleSort(h.col)} style={thStyle(h)}>
-                    {h.label}{h.sortable && (sortCol === h.col
+                    {h.cur && <DirhamSign s="1.05em" style={{ marginRight: 3 }} />}{h.label}{h.sortable && (sortCol === h.col
                       ? <span style={{ fontSize: 12, marginLeft: 3, color: 'var(--accent)' }}>{sortDir === 'asc' ? '▲' : '▼'}</span>
                       : <span style={{ fontSize: 9, marginLeft: 3, color: 'var(--text-3)', opacity: .6 }}>↕</span>)}
                   </th>
@@ -1145,8 +1145,8 @@ function ItemsTableTab({ data, allPeriods, standalone }) {
                       <td key={'v' + k} style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: k === 1 ? 700 : 600, color: v != null ? 'var(--text-2)' : 'var(--text-3)' }}
                         title={v != null ? fmtNum0(v) + ' ' + CURRENCY : ''}>
                         {/* Symbol dark, amount lighter — per Sonu. */}
-                        {/* Symbol inherits the cell's (amount) color + sits at text size. */}
-                        {v != null ? <span style={{ whiteSpace: 'nowrap' }}><DirhamSign s="1em" />{fmtNum0(v)}</span> : '—'}
+                        {/* Symbol lives in the column header now — cells show just the number. */}
+                        {v != null ? fmtNum0(v) : '—'}
                       </td>
                     ))}
                   </tr>
