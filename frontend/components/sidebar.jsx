@@ -128,6 +128,7 @@ function YearPicker({ collapsed, years, currentYear, onSwitchYear, switching }) 
 function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDataSource, itemCount, years, currentYear, onSwitchYear, switching }) {
   const nav = [
     { id: 'lineitems', label: 'Line Items', icon: 'list' },
+    { id: 'costing', label: 'Costing', icon: 'banknote' },
     { id: 'predictions', label: 'Predictions', icon: 'chart' },
     { id: 'actionflow', label: 'Action Flow', icon: 'flow' },
     { id: 'accuracy', label: 'Model Accuracy', icon: 'target' },
@@ -147,6 +148,7 @@ function Sidebar({ activePage, onNavigate, collapsed, onToggleCollapse, onOpenDa
     database: <><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></>,
     menu: <><line x1="4" y1="7" x2="20" y2="7"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="17" x2="20" y2="17"></line></>,
     upload: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></>,
+    banknote: <><rect x="2" y="6" width="20" height="12" rx="2"></rect><circle cx="12" cy="12" r="2.5"></circle><path d="M6 12h.01M18 12h.01"></path></>,
     chevronL: <><polyline points="15 18 9 12 15 6"></polyline></>,
     chevronR: <><polyline points="9 18 15 12 9 6"></polyline></>,
     forecasts: <><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path><path d="M2 20h20"></path></>,
