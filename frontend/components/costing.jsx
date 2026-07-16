@@ -17,6 +17,7 @@ function CostingPage({ allData }) {
   const [sortCol, setSortCol] = React.useState('period');
   const [sortDir, setSortDir] = React.useState('desc');
   const [tablePage, setTablePage] = React.useState(0);
+  const [infoOpen, setInfoOpen] = React.useState(false);
   const PAGE_SIZE = 20;
 
   const fmtBal = (v) => v == null ? '—' : (Math.round(v) || 0).toLocaleString('en-US');
@@ -170,11 +171,21 @@ function CostingPage({ allData }) {
             <span>closest: <b style={{ color: 'var(--text)' }}>{closeStats.min}</b> min · <b style={{ color: 'var(--text)' }}>{closeStats.avg}</b> avg · <b style={{ color: 'var(--text)' }}>{closeStats.max}</b> max</span>
           )}
           <span>{sorted.length.toLocaleString('en-US')} of {rows.length.toLocaleString('en-US')} rows · HV items only</span>
+          {/* Same ⓘ pattern as the other pages — the explanation lives in a
+              popover instead of a permanent line of text. */}
+          <button onClick={() => setInfoOpen(o => !o)} title="What is this?" aria-label="What is this?"
+            style={{ background: infoOpen ? 'var(--accent-surface)' : 'none', border: '1px solid ' + (infoOpen ? 'var(--accent-border)' : 'var(--border)'), borderRadius: 6, padding: '3px 5px', cursor: 'pointer', color: infoOpen ? 'var(--accent)' : 'var(--text-2)', display: 'flex', alignItems: 'center', flexShrink: 0, transition: 'all .12s' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)'; }}
+            onMouseLeave={e => { if (!infoOpen) { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-2)'; } }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="11" x2="12" y2="16" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+          </button>
         </div>
       </div>
-      <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5, marginTop: -4 }}>
-        Actual Cost = actual balance × avg rate · Cost Δ = Actual Cost − Pred Cost Avg · the <span style={{ background: 'rgba(5,150,105,.13)', color: '#047857', fontWeight: 700, padding: '1px 6px', borderRadius: 5 }}>green highlight</span> marks the predicted cost the actual landed closest to. Future months have no actuals yet, so those show “—”.
-      </div>
+      {infoOpen && (
+        <div style={{ background: 'var(--accent-surface)', border: '1px solid var(--accent-border)', borderRadius: 9, padding: '10px 12px', marginTop: -4, fontSize: 11.5, color: 'var(--text-2)', lineHeight: 1.55 }}>
+          <b>Actual Cost</b> = actual balance × avg rate. <b>Cost Δ</b> = Actual Cost − Pred Cost Avg. The <span style={{ background: 'rgba(5,150,105,.13)', color: '#047857', fontWeight: 700, padding: '1px 6px', borderRadius: 5 }}>green highlight</span> marks the predicted cost the actual landed closest to — filter those with ≈ Min / ≈ Avg / ≈ Max. Future months have no actuals yet, so those columns show “—”.
+        </div>
+      )}
 
       {/* Table card */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 12, border: '1px solid var(--border)', background: '#fff', minHeight: 0 }}>
