@@ -1312,5 +1312,7 @@ function PgBtn({ label, active, disabled, onClick }) {
     }}>{label}</button>
   );
 }
+// Shared with CostingPage so its pagination matches Line Items exactly.
+Object.assign(window, { PgBtn });
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);

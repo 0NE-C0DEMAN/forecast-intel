@@ -186,18 +186,17 @@ function CostingPage({ allData }) {
             </tbody>
           </table>
         </div>
-        {/* Pagination */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderTop: '1px solid var(--border)' }}>
-          <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
-            {sorted.length === 0 ? '0' : `${tablePage * PAGE_SIZE + 1}–${Math.min((tablePage + 1) * PAGE_SIZE, sorted.length)}`} of {sorted.length.toLocaleString('en-US')}
-          </span>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-            <button disabled={tablePage === 0} onClick={() => setTablePage(p => Math.max(0, p - 1))}
-              style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: tablePage === 0 ? 'var(--text-3)' : 'var(--text)', fontSize: 12, fontWeight: 600, cursor: tablePage === 0 ? 'default' : 'pointer', fontFamily: 'var(--font)' }}>‹ Prev</button>
-            <span style={{ alignSelf: 'center', fontSize: 11, color: 'var(--text-2)', fontFamily: 'var(--mono)' }}>{tablePage + 1} / {pageCount}</span>
-            <button disabled={tablePage >= pageCount - 1} onClick={() => setTablePage(p => Math.min(pageCount - 1, p + 1))}
-              style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: tablePage >= pageCount - 1 ? 'var(--text-3)' : 'var(--text)', fontSize: 12, fontWeight: 600, cursor: tablePage >= pageCount - 1 ? 'default' : 'pointer', fontFamily: 'var(--font)' }}>Next ›</button>
+        {/* Pagination footer — same centered numbered style as Line Items */}
+        <div style={{ display: 'flex', alignItems: 'center', padding: '8px 14px', borderTop: '1px solid var(--border)', background: '#FAFBFC', flexShrink: 0, gap: 8 }}>
+          <div style={{ flex: 1, fontSize: 11, color: 'var(--text-3)' }}>
+            {sorted.length === 0 ? 'No results' : `${tablePage * PAGE_SIZE + 1}–${Math.min((tablePage + 1) * PAGE_SIZE, sorted.length)} of ${sorted.length}`}
           </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <PgBtn label="←" disabled={tablePage === 0} onClick={() => setTablePage(p => p - 1)} />
+            {(() => { const btns = []; const start = Math.max(0, Math.min(tablePage - 2, pageCount - 5)); const end = Math.min(pageCount, start + 5); for (let i = start; i < end; i++) btns.push(<PgBtn key={i} label={i + 1} active={i === tablePage} onClick={() => setTablePage(i)} />); return btns; })()}
+            <PgBtn label="→" disabled={tablePage >= pageCount - 1} onClick={() => setTablePage(p => p + 1)} />
+          </div>
+          <div style={{ flex: 1 }} />
         </div>
       </div>
     </div>
