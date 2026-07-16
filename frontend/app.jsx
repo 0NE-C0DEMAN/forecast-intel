@@ -62,6 +62,10 @@ function PeriodSelector({ value, onChange, options }) {
     </div>
   );
 }
+// Shared with other pages (e.g. CostingPage) so their period pickers match
+// Line Items exactly. app.jsx executes before the app mounts, so the global
+// exists by the time any page renders.
+Object.assign(window, { PeriodSelector });
 
 /* ===== MODEL TYPE SELECTOR ===== */
 function App() {

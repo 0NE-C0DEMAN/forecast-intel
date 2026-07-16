@@ -29,7 +29,9 @@ function CostingPage({ allData }) {
       return { ...d, actualCost, costDiff };
     }), [allData]);
 
-  const periods = React.useMemo(() => [...new Set(rows.map(r => r.period))].sort().reverse(), [rows]);
+  // Ascending like Line Items — PeriodSelector's ‹ › arrows step oldest→newest
+  // and its dropdown lists newest first on its own.
+  const periods = React.useMemo(() => [...new Set(rows.map(r => r.period))].sort(), [rows]);
   const options = React.useMemo(() => {
     const seen = new Set(); const out = [];
     rows.forEach(r => { const k = r.itemCode || r.description; if (!seen.has(k)) { seen.add(k); out.push({ label: r.description || r.itemCode, sub: r.itemCode, code: r.itemCode, isHV: r.isHV }); } });
@@ -94,22 +96,35 @@ function CostingPage({ allData }) {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, gap: 10 }}>
-      {/* Controls */}
+      {/* Controls — same toolbar style as Line Items */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <SearchBox value={search}
           onType={t => { setSearch(t); setExactItem(null); }}
           onPick={o => { setSearch(o.label); setExactItem(o.code); }}
           onClear={() => { setSearch(''); setExactItem(null); }}
-          options={options} placeholder="Search item…" width="0 0 260px" />
-        <select value={period} onChange={e => setPeriod(e.target.value)}
-          style={{ padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, fontWeight: 600, fontFamily: 'var(--font)', color: period === 'All' ? 'var(--text-2)' : 'var(--accent)', background: '#fff', outline: 'none', cursor: 'pointer' }}>
-          <option value="All">All periods</option>
-          {periods.map(p => <option key={p} value={p}>{fmtP(p)}</option>)}
-        </select>
-        <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-2)' }}>{sorted.length.toLocaleString('en-US')} rows · High-Value items only</div>
+          options={options} placeholder="Search item…" width="0 0 240px" />
+        {periods.length > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surface-2)', borderRadius: 8, padding: '2px 4px 2px 2px' }}>
+            <button onClick={() => setPeriod('All')} style={{
+              padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)',
+              background: period === 'All' ? '#fff' : 'transparent',
+              color: period === 'All' ? 'var(--accent)' : 'var(--text-2)',
+              boxShadow: period === 'All' ? '0 1px 3px rgba(0,0,0,.12)' : 'none',
+              whiteSpace: 'nowrap',
+            }}>All periods</button>
+            <PeriodSelector
+              value={period === 'All' ? periods[periods.length - 1] : period}
+              onChange={(p) => setPeriod(p)}
+              options={periods}
+            />
+          </div>
+        )}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: 'var(--text-2)' }}>
+          <span>{sorted.length.toLocaleString('en-US')} of {rows.length.toLocaleString('en-US')} rows · HV items only</span>
+        </div>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5, marginTop: -4 }}>
-        Actual Cost = actual balance × avg rate · Cost Δ = Actual Cost − Pred Cost Avg. Future months have no actuals yet, so those show “—”.
+        Actual Cost = actual balance × avg rate · Cost Δ = Actual Cost − Pred Cost Avg · the <span style={{ background: 'rgba(5,150,105,.13)', color: '#047857', fontWeight: 700, padding: '1px 6px', borderRadius: 5 }}>green highlight</span> marks the predicted cost the actual landed closest to. Future months have no actuals yet, so those show “—”.
       </div>
 
       {/* Table card */}
@@ -129,7 +144,17 @@ function CostingPage({ allData }) {
               </tr>
             </thead>
             <tbody>
-              {pageRows.map((row, i) => (
+              {pageRows.map((row, i) => {
+                // Which predicted cost did the actual land closest to? (0=min,
+                // 1=avg, 2=max; -1 when there's no actual yet.) That cell gets
+                // the green highlight Sonu asked for.
+                const closest = row.actualCost == null ? -1 : [row.predValueLow, row.predValueAvg, row.predValueHigh]
+                  .reduce((best, v, k) => {
+                    if (v == null) return best;
+                    const d = Math.abs(row.actualCost - v);
+                    return d < best.d ? { k, d } : best;
+                  }, { k: -1, d: Infinity }).k;
+                return (
                 <tr key={(row.itemCode || '') + row.period + i} style={{ borderBottom: '1px solid #F3F4F6' }}>
                   <td style={{ padding: '7px 10px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{fmtP(row.period)}</td>
                   <td style={{ padding: '7px 10px' }}>
@@ -143,15 +168,18 @@ function CostingPage({ allData }) {
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-2)' }}>{fmtBal(row.actualClosingBal)}</td>
                   {[row.predValueLow, row.predValueAvg, row.predValueHigh, row.actualCost].map((v, k) => (
                     <td key={'c' + k} style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: k === 1 || k === 3 ? 700 : 600, color: v != null ? 'var(--text-2)' : 'var(--text-3)' }}
-                      title={v != null ? fmtNum0(v) + ' ' + CURRENCY : ''}>
-                      {v != null ? fmtNum0(v) : '—'}
+                      title={v == null ? '' : fmtNum0(v) + ' ' + CURRENCY + (k === closest ? ' · closest to actual' : '')}>
+                      {v == null ? '—' : (k === closest
+                        ? <span style={{ background: 'rgba(5,150,105,.13)', color: '#047857', fontWeight: 700, padding: '2px 7px', borderRadius: 6, whiteSpace: 'nowrap' }}>{fmtNum0(v)}</span>
+                        : fmtNum0(v))}
                     </td>
                   ))}
                   <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: row.costDiff == null ? 'var(--text-3)' : row.costDiff < 0 ? '#DC2626' : '#059669' }}>
                     {row.costDiff == null ? '—' : (row.costDiff > 0 ? '+' : '') + fmtNum0(row.costDiff)}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {pageRows.length === 0 && (
                 <tr><td colSpan={cols.length} style={{ padding: 36, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>No costed rows match the current filters.</td></tr>
               )}
