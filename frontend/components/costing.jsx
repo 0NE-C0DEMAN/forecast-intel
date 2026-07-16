@@ -12,6 +12,8 @@ function CostingPage({ allData }) {
   const [search, setSearch] = React.useState('');
   const [exactItem, setExactItem] = React.useState(null);
   const [period, setPeriod] = React.useState('All');
+  const [actionFilter, setActionFilter] = React.useState('All');
+  const [closestFilter, setClosestFilter] = React.useState('All'); // All | Min | Avg | Max
   const [sortCol, setSortCol] = React.useState('period');
   const [sortDir, setSortDir] = React.useState('desc');
   const [tablePage, setTablePage] = React.useState(0);
@@ -26,7 +28,18 @@ function CostingPage({ allData }) {
     .map(d => {
       const actualCost = (d.actualClosingBal != null && d.avgCost != null) ? d.actualClosingBal * d.avgCost : null;
       const costDiff = actualCost != null ? actualCost - d.predValueAvg : null;
-      return { ...d, actualCost, costDiff };
+      // Which predicted cost did the actual land closest to?
+      // 0=min, 1=avg, 2=max; -1 when there's no actual yet.
+      let closest = -1;
+      if (actualCost != null) {
+        let bd = Infinity;
+        [d.predValueLow, d.predValueAvg, d.predValueHigh].forEach((v, k) => {
+          if (v == null) return;
+          const dd = Math.abs(actualCost - v);
+          if (dd < bd) { bd = dd; closest = k; }
+        });
+      }
+      return { ...d, actualCost, costDiff, closest };
     }), [allData]);
 
   // Ascending like Line Items — PeriodSelector's ‹ › arrows step oldest→newest
@@ -41,12 +54,21 @@ function CostingPage({ allData }) {
   const filtered = React.useMemo(() => {
     let out = rows;
     if (period !== 'All') out = out.filter(r => r.period === period);
+    if (actionFilter !== 'All') out = out.filter(r => r.predictedAction === actionFilter);
+    if (closestFilter !== 'All') { const want = { Min: 0, Avg: 1, Max: 2 }[closestFilter]; out = out.filter(r => r.closest === want); }
     if (exactItem) out = out.filter(r => r.itemCode === exactItem);
     else if (search.trim()) { const s = search.trim().toLowerCase(); out = out.filter(r => (((r.description || '') + ' ' + (r.itemCode || '')).toLowerCase().includes(s))); }
     return out;
-  }, [rows, period, search, exactItem]);
+  }, [rows, period, actionFilter, closestFilter, search, exactItem]);
 
-  React.useEffect(() => { setTablePage(0); }, [period, search, exactItem, sortCol, sortDir]);
+  // Where do the actuals land? Mirrors Line Items' ✓/✗ direction summary.
+  const closeStats = React.useMemo(() => {
+    const s = { min: 0, avg: 0, max: 0 };
+    filtered.forEach(r => { if (r.closest === 0) s.min++; else if (r.closest === 1) s.avg++; else if (r.closest === 2) s.max++; });
+    return s;
+  }, [filtered]);
+
+  React.useEffect(() => { setTablePage(0); }, [period, actionFilter, closestFilter, search, exactItem, sortCol, sortDir]);
 
   const sorted = React.useMemo(() => {
     const arr = [...filtered];
@@ -119,7 +141,34 @@ function CostingPage({ allData }) {
             />
           </div>
         )}
+        {/* Action filter — same as Line Items */}
+        <div style={{ display: 'flex', background: 'var(--surface-2)', borderRadius: 8, padding: 2, gap: 2 }}>
+          {['All', 'Deliver', 'Return', 'No Change'].map(a => (
+            <button key={a} onClick={() => setActionFilter(a)} style={{
+              padding: '4px 11px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)',
+              background: actionFilter === a ? '#fff' : 'transparent',
+              color: actionFilter === a ? (a === 'All' ? 'var(--text)' : a === 'Deliver' ? '#059669' : a === 'Return' ? '#DC2626' : '#D97706') : 'var(--text-2)',
+              boxShadow: actionFilter === a ? '0 1px 3px rgba(0,0,0,.12)' : 'none', whiteSpace: 'nowrap',
+            }}>{a}</button>
+          ))}
+        </div>
+        {/* Closest-cost filter — Costing's version of Match/Mismatch: which
+            predicted cost the actual landed nearest (pairs with the highlight). */}
+        <div style={{ display: 'flex', background: 'var(--surface-2)', borderRadius: 8, padding: 2, gap: 2 }}
+          title="Rows where the actual cost landed closest to the min / avg / max predicted cost">
+          {['All', 'Min', 'Avg', 'Max'].map(c => (
+            <button key={c} onClick={() => setClosestFilter(c)} style={{
+              padding: '4px 11px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font)',
+              background: closestFilter === c ? '#fff' : 'transparent',
+              color: closestFilter === c ? (c === 'All' ? 'var(--text)' : '#047857') : 'var(--text-2)',
+              boxShadow: closestFilter === c ? '0 1px 3px rgba(0,0,0,.12)' : 'none', whiteSpace: 'nowrap',
+            }}>{c === 'All' ? 'All' : '≈ ' + c}</button>
+          ))}
+        </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: 'var(--text-2)' }}>
+          {(closeStats.min + closeStats.avg + closeStats.max) > 0 && (
+            <span>closest: <b style={{ color: 'var(--text)' }}>{closeStats.min}</b> min · <b style={{ color: 'var(--text)' }}>{closeStats.avg}</b> avg · <b style={{ color: 'var(--text)' }}>{closeStats.max}</b> max</span>
+          )}
           <span>{sorted.length.toLocaleString('en-US')} of {rows.length.toLocaleString('en-US')} rows · HV items only</span>
         </div>
       </div>
@@ -145,15 +194,9 @@ function CostingPage({ allData }) {
             </thead>
             <tbody>
               {pageRows.map((row, i) => {
-                // Which predicted cost did the actual land closest to? (0=min,
-                // 1=avg, 2=max; -1 when there's no actual yet.) That cell gets
-                // the green highlight Sonu asked for.
-                const closest = row.actualCost == null ? -1 : [row.predValueLow, row.predValueAvg, row.predValueHigh]
-                  .reduce((best, v, k) => {
-                    if (v == null) return best;
-                    const d = Math.abs(row.actualCost - v);
-                    return d < best.d ? { k, d } : best;
-                  }, { k: -1, d: Infinity }).k;
+                // Precomputed on the row (rows memo): which predicted cost the
+                // actual landed closest to — that cell gets the green highlight.
+                const closest = row.closest;
                 return (
                 <tr key={(row.itemCode || '') + row.period + i} style={{ borderBottom: '1px solid #F3F4F6' }}>
                   <td style={{ padding: '7px 10px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{fmtP(row.period)}</td>
