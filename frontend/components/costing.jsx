@@ -14,6 +14,9 @@ function CostingPage({ allData }) {
   const [period, setPeriod] = React.useState('All');
   const [actionFilter, setActionFilter] = React.useState('All');
   const [closestFilter, setClosestFilter] = React.useState('All'); // All | Min | Avg | Max
+  // The backend only costs High-Value items, so HV-only IS the costing view —
+  // hence default on. Unticking reveals the remaining items (cost cells blank).
+  const [hvOnly, setHvOnly] = React.useState(true);
   const [sortCol, setSortCol] = React.useState('period');
   const [sortDir, setSortDir] = React.useState('desc');
   const [tablePage, setTablePage] = React.useState(0);
@@ -24,8 +27,9 @@ function CostingPage({ allData }) {
   const fmtP = (p) => { const m = String(p || '').match(/^(\d{4})-(\d{2})$/); if (!m) return p || '—'; const ns = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; return `${ns[parseInt(m[2])]} '${m[1].slice(2)}`; };
 
   // Only costed rows (HV items) + the two derived columns.
+  // Base set is every row; the HV Only tick (default on) narrows it to the
+  // costed ones. Non-HV rows carry no cost, so their cost cells render "—".
   const rows = React.useMemo(() => (allData || [])
-    .filter(d => d.predValueAvg != null)
     .map(d => {
       const actualCost = (d.actualClosingBal != null && d.avgCost != null) ? d.actualClosingBal * d.avgCost : null;
       const costDiff = actualCost != null ? actualCost - d.predValueAvg : null;
@@ -48,19 +52,24 @@ function CostingPage({ allData }) {
   const periods = React.useMemo(() => [...new Set(rows.map(r => r.period))].sort(), [rows]);
   const options = React.useMemo(() => {
     const seen = new Set(); const out = [];
-    rows.forEach(r => { const k = r.itemCode || r.description; if (!seen.has(k)) { seen.add(k); out.push({ label: r.description || r.itemCode, sub: r.itemCode, code: r.itemCode, isHV: r.isHV }); } });
+    rows.forEach(r => {
+      if (hvOnly && !r.isHV) return; // suggest only what's actually listed
+      const k = r.itemCode || r.description;
+      if (!seen.has(k)) { seen.add(k); out.push({ label: r.description || r.itemCode, sub: r.itemCode, code: r.itemCode, isHV: r.isHV }); }
+    });
     return out.sort((a, b) => (a.label || '').localeCompare(b.label || ''));
-  }, [rows]);
+  }, [rows, hvOnly]);
 
   const filtered = React.useMemo(() => {
     let out = rows;
+    if (hvOnly) out = out.filter(r => r.isHV);
     if (period !== 'All') out = out.filter(r => r.period === period);
     if (actionFilter !== 'All') out = out.filter(r => r.predictedAction === actionFilter);
     if (closestFilter !== 'All') { const want = { Min: 0, Avg: 1, Max: 2 }[closestFilter]; out = out.filter(r => r.closest === want); }
     if (exactItem) out = out.filter(r => r.itemCode === exactItem);
     else if (search.trim()) { const s = search.trim().toLowerCase(); out = out.filter(r => (((r.description || '') + ' ' + (r.itemCode || '')).toLowerCase().includes(s))); }
     return out;
-  }, [rows, period, actionFilter, closestFilter, search, exactItem]);
+  }, [rows, hvOnly, period, actionFilter, closestFilter, search, exactItem]);
 
   // Where do the actuals land? Mirrors Line Items' ✓/✗ direction summary.
   const closeStats = React.useMemo(() => {
@@ -69,7 +78,7 @@ function CostingPage({ allData }) {
     return s;
   }, [filtered]);
 
-  React.useEffect(() => { setTablePage(0); }, [period, actionFilter, closestFilter, search, exactItem, sortCol, sortDir]);
+  React.useEffect(() => { setTablePage(0); }, [hvOnly, period, actionFilter, closestFilter, search, exactItem, sortCol, sortDir]);
 
   const sorted = React.useMemo(() => {
     const arr = [...filtered];
@@ -166,11 +175,16 @@ function CostingPage({ allData }) {
             }}>{c === 'All' ? 'All' : '≈ ' + c}</button>
           ))}
         </div>
+        {/* HV Only — same control as Line Items */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer', color: hvOnly ? 'var(--accent)' : 'var(--text-3)', padding: '5px 10px', border: '1px solid', borderColor: hvOnly ? 'var(--accent)' : 'var(--border)', borderRadius: 6, background: hvOnly ? 'rgba(79,70,229,.06)' : '#fff' }}>
+          <input type="checkbox" checked={hvOnly} onChange={e => setHvOnly(e.target.checked)} style={{ accentColor: 'var(--accent)', margin: 0 }} />
+          HV Only
+        </label>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: 'var(--text-2)' }}>
           {(closeStats.min + closeStats.avg + closeStats.max) > 0 && (
             <span>closest: <b style={{ color: 'var(--text)' }}>{closeStats.min}</b> min · <b style={{ color: 'var(--text)' }}>{closeStats.avg}</b> avg · <b style={{ color: 'var(--text)' }}>{closeStats.max}</b> max</span>
           )}
-          <span>{sorted.length.toLocaleString('en-US')} of {rows.length.toLocaleString('en-US')} rows · HV items only</span>
+          <span>{sorted.length.toLocaleString('en-US')} of {rows.length.toLocaleString('en-US')} rows</span>
           {/* Same ⓘ pattern as the other pages — the explanation lives in a
               popover instead of a permanent line of text. */}
           <button onClick={() => setInfoOpen(o => !o)} title="What is this?" aria-label="What is this?"
@@ -183,7 +197,7 @@ function CostingPage({ allData }) {
       </div>
       {infoOpen && (
         <div style={{ background: 'var(--accent-surface)', border: '1px solid var(--accent-border)', borderRadius: 9, padding: '10px 12px', marginTop: -4, fontSize: 11.5, color: 'var(--text-2)', lineHeight: 1.55 }}>
-          <b>Actual Cost</b> = actual balance × avg rate. <b>Cost Δ</b> = Actual Cost − Pred Cost Avg. The <span style={{ background: 'rgba(5,150,105,.13)', color: '#047857', fontWeight: 700, padding: '1px 6px', borderRadius: 5 }}>green highlight</span> marks the predicted cost the actual landed closest to — filter those with ≈ Min / ≈ Avg / ≈ Max. Future months have no actuals yet, so those columns show “—”.
+          <b>Actual Cost</b> = actual balance × avg rate. <b>Cost Δ</b> = Actual Cost − Pred Cost Avg. The <span style={{ background: 'rgba(5,150,105,.13)', color: '#047857', fontWeight: 700, padding: '1px 6px', borderRadius: 5 }}>green highlight</span> marks the predicted cost the actual landed closest to — filter those with ≈ Min / ≈ Avg / ≈ Max. Costs exist for High-Value items only, so <b>HV Only</b> is on by default; untick it to list the remaining items (their cost cells stay blank). Future months have no actuals yet, so those columns show “—”.
         </div>
       )}
 
