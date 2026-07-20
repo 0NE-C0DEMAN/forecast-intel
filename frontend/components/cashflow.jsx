@@ -77,7 +77,7 @@ function CashFlowPage({ allData }) {
   };
 
   const card = { background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '18px 20px' };
-  const th = { padding: '9px 10px', fontSize: 10, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '2px solid var(--border)', background: '#FAFBFC', whiteSpace: 'normal', lineHeight: 1.2, verticalAlign: 'bottom' };
+  const th = { padding: '9px 10px', fontSize: 10, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '2px solid var(--border)', background: '#FAFBFC', whiteSpace: 'normal', lineHeight: 1.2, verticalAlign: 'bottom', position: 'sticky', top: 0, zIndex: 1 };
   const cur = () => <span style={{ whiteSpace: 'nowrap' }}> (<DirhamSign s="1em" style={{ marginRight: 0, verticalAlign: '-0.12em' }} />)</span>;
   const td = (align, extra) => ({ padding: '7px 10px', textAlign: align || 'right', fontFamily: 'var(--mono)', fontSize: 11, ...extra });
 
@@ -146,7 +146,7 @@ function CashFlowPage({ allData }) {
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>top {top20.length} of {items.length} items · full-month totals in the cards above</span>
       </div>
       <div style={{ ...card, padding: 0, overflow: 'hidden', marginBottom: 22 }}>
-        <div className="h-scroller" style={{ overflowX: 'auto' }}>
+        <div className="h-scroller" style={{ overflow: 'auto', maxHeight: 440 }}>
           <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr>
@@ -195,7 +195,7 @@ function CashFlowPage({ allData }) {
       {/* By material group */}
       <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Cash flow by material group</div>
       <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-        <div className="h-scroller" style={{ overflowX: 'auto' }}>
+        <div className="h-scroller" style={{ overflow: 'auto', maxHeight: 360 }}>
           <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr>
