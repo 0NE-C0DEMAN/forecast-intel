@@ -1267,7 +1267,7 @@ def _reload_all_from_supabase() -> bool:
 # Supabase hook + mappers used by everything else; `app` is the entry
 # component and must be last.
 _COMPONENT_FILES = [
-    "sidebar", "charts", "explorer", "insights", "upload", "datasource", "actionflow", "newitems", "dormant", "costing", "iteminsight",
+    "sidebar", "charts", "explorer", "insights", "upload", "datasource", "actionflow", "newitems", "dormant", "costing", "cashflow", "iteminsight",
 ]
 _TOP_LEVEL_JSX = ["tweaks-panel", "data", "app"]
 
@@ -1436,6 +1436,7 @@ window.__switchYear = function(year) {
         ("components/newitems.jsx", "newitems"),
         ("components/dormant.jsx", "dormant"),
         ("components/costing.jsx", "costing"),
+        ("components/cashflow.jsx", "cashflow"),
         ("components/iteminsight.jsx", "iteminsight"),
         ("app.jsx", "app"),
     ]
