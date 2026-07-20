@@ -80,6 +80,8 @@ function CashFlowPage({ allData }) {
   const th = { padding: '9px 10px', fontSize: 10, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '2px solid var(--border)', background: '#FAFBFC', whiteSpace: 'normal', lineHeight: 1.2, verticalAlign: 'bottom', position: 'sticky', top: 0, zIndex: 1 };
   const cur = () => <span style={{ whiteSpace: 'nowrap' }}> (<DirhamSign s="1em" style={{ marginRight: 0, verticalAlign: '-0.12em' }} />)</span>;
   const td = (align, extra) => ({ padding: '7px 10px', textAlign: align || 'right', fontFamily: 'var(--mono)', fontSize: 11, ...extra });
+  // Total row pinned to the bottom of the scroll area (stays visible while rows scroll).
+  const totalTd = (align, extra) => ({ ...td(align, extra), position: 'sticky', bottom: 0, background: '#FAFBFC', zIndex: 2, boxShadow: 'inset 0 2px 0 var(--border)' });
 
   return (
     <div style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: '16px 22px 28px' }} className="h-scroller">
@@ -179,13 +181,13 @@ function CashFlowPage({ allData }) {
                   <td style={td('right', { color: 'var(--text-2)' })}>{num0(d.predValueHigh)}</td>
                 </tr>
               ))}
-              <tr style={{ borderTop: '2px solid var(--border)', background: '#FAFBFC' }}>
-                <td style={td('left', { fontWeight: 800 })}>Top {top20.length} total</td>
-                <td style={td('right', { fontWeight: 800 })}>{num0(top20Tot.qty)}</td>
-                <td /><td /><td />
-                <td style={td('right', { fontWeight: 700 })}>{num0(top20Tot.min)}</td>
-                <td style={td('right', { fontWeight: 800 })}>{num0(top20Tot.avg)}</td>
-                <td style={td('right', { fontWeight: 700 })}>{num0(top20Tot.max)}</td>
+              <tr>
+                <td style={totalTd('left', { fontWeight: 800 })}>Top {top20.length} total</td>
+                <td style={totalTd('right', { fontWeight: 800 })}>{num0(top20Tot.qty)}</td>
+                <td style={totalTd()} /><td style={totalTd()} /><td style={totalTd()} />
+                <td style={totalTd('right', { fontWeight: 700 })}>{num0(top20Tot.min)}</td>
+                <td style={totalTd('right', { fontWeight: 800 })}>{num0(top20Tot.avg)}</td>
+                <td style={totalTd('right', { fontWeight: 700 })}>{num0(top20Tot.max)}</td>
               </tr>
             </tbody>
           </table>
